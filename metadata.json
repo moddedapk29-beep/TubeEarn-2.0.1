@@ -1,0 +1,6 @@
+{
+  "name": "TubeEarn",
+  "description": "Creator promotion & rewards marketplace with creator/user wallets, ₹299 minimum withdrawals, campaign verification, anti-fraud scoring, and Gemini intelligence",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

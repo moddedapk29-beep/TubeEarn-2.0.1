@@ -1,0 +1,120 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile with role, wallet balance, and KYC status",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "role": { "type": "string", "enum": ["user", "creator", "admin"] },
+        "kycStatus": { "type": "string", "enum": ["none", "pending", "verified", "rejected"] },
+        "walletBalance": { "type": "number" },
+        "pendingBalance": { "type": "number" },
+        "lockedBalance": { "type": "number" },
+        "lifetimeEarned": { "type": "number" },
+        "lifetimeSpent": { "type": "number" },
+        "accountStatus": { "type": "string", "enum": ["active", "flagged", "suspended"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "role"]
+    },
+    "Campaign": {
+      "title": "Campaign",
+      "description": "Creator campaign with task rewards and participants",
+      "type": "object",
+      "properties": {
+        "creatorId": { "type": "string" },
+        "creatorName": { "type": "string" },
+        "platform": { "type": "string", "enum": ["youtube", "instagram", "facebook"] },
+        "taskType": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "targetUrl": { "type": "string" },
+        "requiredParticipants": { "type": "number" },
+        "completedParticipants": { "type": "number" },
+        "creatorCostPerTask": { "type": "number" },
+        "userRewardPerTask": { "type": "number" },
+        "totalBudget": { "type": "number" },
+        "status": { "type": "string", "enum": ["active", "paused", "completed", "cancelled"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["creatorId", "platform", "title", "requiredParticipants", "creatorCostPerTask", "userRewardPerTask", "status"]
+    },
+    "TaskSubmission": {
+      "title": "TaskSubmission",
+      "description": "User task submission for campaign verification",
+      "type": "object",
+      "properties": {
+        "campaignId": { "type": "string" },
+        "creatorId": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "verificationStatus": { "type": "string", "enum": ["pending", "approved", "rejected", "flagged_review"] },
+        "rewardAmount": { "type": "number" },
+        "fraudScore": { "type": "number" },
+        "submittedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["campaignId", "userId", "verificationStatus", "rewardAmount"]
+    },
+    "Transaction": {
+      "title": "Transaction",
+      "description": "Immutable ledger record of funds movement",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "type": { "type": "string" },
+        "amount": { "type": "number" },
+        "balanceAfter": { "type": "number" },
+        "status": { "type": "string", "enum": ["pending", "completed", "failed", "cancelled"] },
+        "referenceId": { "type": "string" },
+        "description": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "type", "amount", "status"]
+    },
+    "Withdrawal": {
+      "title": "Withdrawal",
+      "description": "User payout withdrawal request (minimum ₹299)",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "amount": { "type": "number" },
+        "method": { "type": "string", "enum": ["upi", "bank_transfer"] },
+        "upiId": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "processing", "completed", "rejected"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "amount", "method", "status"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profile and wallet ledger balance"
+    },
+    "/campaigns/{campaignId}": {
+      "schema": "Campaign",
+      "description": "Campaign definitions for creators"
+    },
+    "/tasks/{taskId}": {
+      "schema": "TaskSubmission",
+      "description": "Task submissions from users"
+    },
+    "/transactions/{transactionId}": {
+      "schema": "Transaction",
+      "description": "Financial transaction ledger"
+    },
+    "/walletTransactions/{transactionId}": {
+      "schema": "Transaction",
+      "description": "User wallet transaction ledger"
+    },
+    "/withdrawals/{withdrawalId}": {
+      "schema": "Withdrawal",
+      "description": "Withdrawal requests (min ₹299)"
+    }
+  }
+}
