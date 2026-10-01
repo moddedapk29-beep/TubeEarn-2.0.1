@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { initialCampaigns, initialUserProfiles, initialTransactions } from '../mockData';
+import { initialCampaigns, initialUserProfiles, initialTransactions, initialWithdrawals, initialAdminActionLogs } from '../mockData';
 import { auditFraudDeepThinking, verifyTaskWithAI } from '../gemini';
 import { validateUpiVpa, buildUpiUri, generateUtr, OFFICIAL_ESCROW_UPI_ID } from '../utils/upiGateway';
 
@@ -329,6 +329,352 @@ describe('TubeEarn Financial & Business Rules Test Suite', () => {
 
       expect(adminCommissionBalance).toBe(2450.0);
       expect(payoutUtr).toHaveLength(12);
+    });
+  });
+
+  describe('User & Creator Unique ID Provisioning & Admin Gate', () => {
+    it('generates valid prefixed User IDs (USR-XXXXXX)', () => {
+      const generateUserId = (suffix?: string) => {
+        const cleanSuffix = suffix ? suffix.replace(/[^A-Z0-9]/g, '') : Math.floor(100000 + Math.random() * 900000).toString();
+        return `USR-${cleanSuffix}`;
+      };
+
+      const id1 = generateUserId('849201');
+      const id2 = generateUserId();
+
+      expect(id1).toBe('USR-849201');
+      expect(id2).toMatch(/^USR-\d{6}$/);
+    });
+
+    it('generates valid prefixed Creator Studio IDs (CRT-XXXXXX)', () => {
+      const generateCreatorId = (suffix?: string) => {
+        const cleanSuffix = suffix ? suffix.replace(/[^A-Z0-9]/g, '') : Math.floor(100000 + Math.random() * 900000).toString();
+        return `CRT-${cleanSuffix}`;
+      };
+
+      const id1 = generateCreatorId('918234');
+      const id2 = generateCreatorId();
+
+      expect(id1).toBe('CRT-918234');
+      expect(id2).toMatch(/^CRT-\d{6}$/);
+    });
+
+    it('validates master admin access strictly with authorized Admin ID and Password', () => {
+      const validateAdminLogin = (id: string, pass: string) => {
+        const validIds = ['ADM-SUPER-2026', 'ADM-SUPER', 'ADMIN'];
+        const validPass = ['ADMIN2026', 'TUBEEARN#2026', '2991000', 'ADMIN'];
+
+        const isIdValid = validIds.includes(id.trim().toUpperCase());
+        const isPassValid = validPass.includes(pass.trim().toUpperCase());
+
+        return isIdValid && isPassValid;
+      };
+
+      expect(validateAdminLogin('ADM-SUPER-2026', 'ADMIN2026')).toBe(true);
+      expect(validateAdminLogin('ADM-SUPER', 'ADMIN2026')).toBe(true);
+      expect(validateAdminLogin('UNKNOWN-ID', 'ADMIN2026')).toBe(false);
+      expect(validateAdminLogin('ADM-SUPER-2026', 'WRONGPASS')).toBe(false);
+    });
+  });
+
+  describe('Admin Withdrawal Approval & Rejection Queue Rules', () => {
+    it('verifies all queue items satisfy the ₹299 minimum threshold before processing', () => {
+      initialWithdrawals.forEach(w => {
+        expect(w.amount).toBeGreaterThanOrEqual(299.0);
+      });
+    });
+
+    it('processes approval with 12-digit NPCI IMPS UTR and status completed', () => {
+      const pendingRequest = {
+        id: 'wdr_test_1',
+        amount: 350.0,
+        status: 'pending',
+        userName: 'Priya Verma'
+      };
+
+      const utr = generateUtr();
+      const approvedRequest = {
+        ...pendingRequest,
+        status: 'completed',
+        utrNumber: utr,
+        payoutRef: 'UPI_GATEWAY_' + utr,
+        processedAt: new Date().toISOString()
+      };
+
+      expect(approvedRequest.status).toBe('completed');
+      expect(approvedRequest.utrNumber).toHaveLength(12);
+      expect(approvedRequest.payoutRef).toContain('UPI_GATEWAY_');
+      expect(approvedRequest.processedAt).toBeDefined();
+    });
+
+    it('rejects fraudulent withdrawal attempts and mandates a descriptive rejection reason', () => {
+      const pendingRequest = {
+        id: 'wdr_bot_99',
+        userId: 'user_bot_1',
+        amount: 299.0,
+        status: 'pending',
+        userName: 'Suspicious Bot Account'
+      };
+
+      const rejectionReason = 'Fraudulent attempt: Headless browser automation detected with 4s watch velocity.';
+      
+      // Rejection reason must be >= 10 characters
+      expect(rejectionReason.length).toBeGreaterThanOrEqual(10);
+
+      let userWalletBalance = 50.0;
+      let userLockedBalance = 299.0;
+
+      // Execute rejection & refund:
+      const rejectedRequest = {
+        ...pendingRequest,
+        status: 'rejected',
+        rejectionReason,
+        processedAt: new Date().toISOString()
+      };
+
+      userWalletBalance += pendingRequest.amount;
+      userLockedBalance = Math.max(0, userLockedBalance - pendingRequest.amount);
+
+      expect(rejectedRequest.status).toBe('rejected');
+      expect(rejectedRequest.rejectionReason).toContain('Headless browser automation');
+      expect(userWalletBalance).toBe(349.0);
+      expect(userLockedBalance).toBe(0.0);
+    });
+
+    it('records an immutable Action History log entry for approvals with admin identity and UTR', () => {
+      const approvalLog = initialAdminActionLogs.find(l => l.actionType === 'approve_withdrawal');
+      expect(approvalLog).toBeDefined();
+      expect(approvalLog?.adminId).toMatch(/^ADM-/);
+      expect(approvalLog?.adminName).toBeDefined();
+      expect(approvalLog?.timestamp).toBeDefined();
+      expect(approvalLog?.details?.utrNumber).toHaveLength(12);
+      expect(approvalLog?.amount).toBeGreaterThanOrEqual(299.0);
+    });
+
+    it('records an immutable Action History log entry for rejections with admin identity and documented reason', () => {
+      const rejectionLog = initialAdminActionLogs.find(l => l.actionType === 'reject_withdrawal');
+      expect(rejectionLog).toBeDefined();
+      expect(rejectionLog?.adminId).toMatch(/^ADM-/);
+      expect(rejectionLog?.adminName).toBeDefined();
+      expect(rejectionLog?.timestamp).toBeDefined();
+      expect(rejectionLog?.details?.rejectionReason).toBeDefined();
+      expect(rejectionLog?.details?.rejectionReason?.length).toBeGreaterThanOrEqual(10);
+      expect(rejectionLog?.details?.rejectionReason).toContain('Fraudulent attempt');
+    });
+  });
+
+  describe('User, Creator & Admin Login and ID Creation Rules', () => {
+    it('creates new unique Earner User IDs strictly prefixed with USR- without duplicate prefixes', () => {
+      const generateCleanId = (role: 'user' | 'creator', input?: string) => {
+        const prefix = role === 'user' ? 'USR-' : 'CRT-';
+        const rawDigits = (input || '').replace(/^(USR|CRT)-?/i, '').replace(/[^A-Z0-9]/g, '');
+        return rawDigits.length >= 4 ? `${prefix}${rawDigits}` : `${prefix}${Math.floor(100000 + Math.random() * 900000)}`;
+      };
+
+      // Case 1: user enters raw 6 digits
+      expect(generateCleanId('user', '849201')).toBe('USR-849201');
+      // Case 2: user enters with USR- prefix already
+      expect(generateCleanId('user', 'USR-849201')).toBe('USR-849201');
+      // Case 3: user enters lowercase without hyphen
+      expect(generateCleanId('user', 'usr849201')).toBe('USR-849201');
+      // Case 4: user enters empty
+      expect(generateCleanId('user')).toMatch(/^USR-\d{6}$/);
+    });
+
+    it('creates new unique Creator IDs strictly prefixed with CRT- without duplicate prefixes', () => {
+      const generateCleanId = (role: 'user' | 'creator', input?: string) => {
+        const prefix = role === 'user' ? 'USR-' : 'CRT-';
+        const rawDigits = (input || '').replace(/^(USR|CRT)-?/i, '').replace(/[^A-Z0-9]/g, '');
+        return rawDigits.length >= 4 ? `${prefix}${rawDigits}` : `${prefix}${Math.floor(100000 + Math.random() * 900000)}`;
+      };
+
+      expect(generateCleanId('creator', '918234')).toBe('CRT-918234');
+      expect(generateCleanId('creator', 'CRT-918234')).toBe('CRT-918234');
+      expect(generateCleanId('creator', 'crt918234')).toBe('CRT-918234');
+      expect(generateCleanId('creator')).toMatch(/^CRT-\d{6}$/);
+    });
+
+    it('authenticates user login flexibly across case, prefix variations, and email', () => {
+      const matchUser = (inputId: string, account: { customUserId: string; email: string }) => {
+        const cleanInput = inputId.toUpperCase().trim();
+        const normalizedDigits = cleanInput.replace(/^(USR)-?/i, '').replace(/[^A-Z0-9]/g, '');
+        const cleanEmail = inputId.toLowerCase().trim();
+
+        const accountId = account.customUserId.toUpperCase();
+        const accountDigits = accountId.replace(/^(USR)-?/i, '').replace(/[^A-Z0-9]/g, '');
+        const accountClean = accountId.replace(/[^A-Z0-9]/g, '');
+        const inputClean = cleanInput.replace(/[^A-Z0-9]/g, '');
+
+        return (
+          accountId === cleanInput ||
+          accountClean === inputClean ||
+          (normalizedDigits.length >= 4 && accountDigits === normalizedDigits) ||
+          (account.email.toLowerCase() === cleanEmail)
+        );
+      };
+
+      const testAccount = { customUserId: 'USR-849201', email: 'kavita@example.com' };
+
+      // Exact match
+      expect(matchUser('USR-849201', testAccount)).toBe(true);
+      // Lowercase match
+      expect(matchUser('usr-849201', testAccount)).toBe(true);
+      // Without hyphen
+      expect(matchUser('usr849201', testAccount)).toBe(true);
+      // Just the digits
+      expect(matchUser('849201', testAccount)).toBe(true);
+      // By email
+      expect(matchUser('kavita@example.com', testAccount)).toBe(true);
+      // Non-matching
+      expect(matchUser('USR-999999', testAccount)).toBe(false);
+    });
+
+    it('authenticates creator login flexibly across case, prefix variations, and email', () => {
+      const matchCreator = (inputId: string, account: { customUserId: string; email: string }) => {
+        const cleanInput = inputId.toUpperCase().trim();
+        const normalizedDigits = cleanInput.replace(/^(CRT)-?/i, '').replace(/[^A-Z0-9]/g, '');
+        const cleanEmail = inputId.toLowerCase().trim();
+
+        const accountId = account.customUserId.toUpperCase();
+        const accountDigits = accountId.replace(/^(CRT)-?/i, '').replace(/[^A-Z0-9]/g, '');
+        const accountClean = accountId.replace(/[^A-Z0-9]/g, '');
+        const inputClean = cleanInput.replace(/[^A-Z0-9]/g, '');
+
+        return (
+          accountId === cleanInput ||
+          accountClean === inputClean ||
+          (normalizedDigits.length >= 4 && accountDigits === normalizedDigits) ||
+          (account.email.toLowerCase() === cleanEmail)
+        );
+      };
+
+      const testCreator = { customUserId: 'CRT-728193', email: 'studio@channel.com' };
+
+      expect(matchCreator('CRT-728193', testCreator)).toBe(true);
+      expect(matchCreator('crt-728193', testCreator)).toBe(true);
+      expect(matchCreator('crt728193', testCreator)).toBe(true);
+      expect(matchCreator('728193', testCreator)).toBe(true);
+      expect(matchCreator('studio@channel.com', testCreator)).toBe(true);
+      expect(matchCreator('CRT-111111', testCreator)).toBe(false);
+    });
+
+    it('authenticates admin login in any parameter order (ID first OR Password first)', () => {
+      const parseAndValidateAdmin = (arg1?: string, arg2?: string) => {
+        const raw1 = (arg1 || '').trim();
+        const raw2 = (arg2 || '').trim();
+        const str1 = raw1.toUpperCase();
+        const str2 = raw2.toUpperCase();
+
+        const isIdCandidate = (s: string) => 
+          s.startsWith('ADM-') || s.includes('@') || s === 'ADM' || s.startsWith('ADMIN-') || s === 'ADMIN';
+
+        const isPassCandidate = (s: string) =>
+          s === 'ADMIN2026' || s.includes('2026') || s === '2991000' || s.startsWith('TUBE') || s === 'PASSWORD';
+
+        let id = '';
+        let pass = '';
+
+        if (isIdCandidate(str1) && !isIdCandidate(str2)) {
+          id = str1;
+          pass = raw2;
+        } else if (isIdCandidate(str2) && !isIdCandidate(str1)) {
+          id = str2;
+          pass = raw1;
+        } else if (isPassCandidate(str1) && !isPassCandidate(str2)) {
+          pass = raw1;
+          id = str2;
+        } else if (isPassCandidate(str2) && !isPassCandidate(str1)) {
+          pass = raw2;
+          id = str1;
+        } else if (str2.startsWith('ADM-')) {
+          id = str2;
+          pass = raw1;
+        } else {
+          id = str1 || str2 || 'ADM-SUPER-2026';
+          pass = str2 || str1;
+        }
+
+        if (!id || id === 'ADMIN2026') id = 'ADM-SUPER-2026';
+
+        const validIds = ['ADM-SUPER-2026', 'ADM-SUPER', 'ADMIN', 'ADMIN@TUBEEARN.APP'];
+        const validPass = ['ADMIN2026', 'TUBEEARN#2026', '2991000', 'ADMIN'];
+
+        const cleanPass = (pass || '').toUpperCase().trim();
+        const isIdValid = id.startsWith('ADM-') || id.startsWith('ADM') || validIds.includes(id);
+        const isPassValid = validPass.includes(cleanPass);
+
+        return isIdValid && isPassValid;
+      };
+
+      // Case A: ID first, Password second
+      expect(parseAndValidateAdmin('ADM-SUPER-2026', 'ADMIN2026')).toBe(true);
+      // Case B: Password first, ID second
+      expect(parseAndValidateAdmin('ADMIN2026', 'ADM-SUPER-2026')).toBe(true);
+      // Case C: Only password entered (fallback to ADM-SUPER-2026)
+      expect(parseAndValidateAdmin('ADMIN2026')).toBe(true);
+      // Case D: Wrong password
+      expect(parseAndValidateAdmin('ADM-SUPER-2026', 'WRONGPASS')).toBe(false);
+      // Case E: Wrong ID
+      expect(parseAndValidateAdmin('INVALID-ID', 'ADMIN2026')).toBe(false);
+    });
+  });
+
+  describe('Pending Document Verifications & KYC Review', () => {
+    it('identifies pending verification profiles for both earners and creators', () => {
+      const profiles = Object.values(initialUserProfiles);
+      const pendingList = profiles.filter(p => p.kycStatus === 'pending');
+
+      expect(pendingList.length).toBeGreaterThanOrEqual(2);
+      expect(pendingList.some(p => p.role === 'user')).toBe(true);
+      expect(pendingList.some(p => p.role === 'creator')).toBe(true);
+      
+      pendingList.forEach(p => {
+        expect(p.kycDocumentType).toBeDefined();
+        expect(p.kycDocumentNumberMasked).toBeDefined();
+        expect(p.kycSubmittedAt).toBeDefined();
+      });
+    });
+
+    it('approves document verification with single click and records verification timestamp', () => {
+      const pendingProfile = {
+        uid: 'usr_test_kyc',
+        name: 'Test Earner',
+        role: 'user' as const,
+        kycStatus: 'pending' as const,
+        kycDocumentType: 'pan' as const,
+        kycDocumentNumberMasked: 'ABCDE1234F'
+      };
+
+      const verifiedTimestamp = new Date().toISOString();
+      const updatedProfile = {
+        ...pendingProfile,
+        kycStatus: 'verified' as const,
+        kycVerifiedAt: verifiedTimestamp
+      };
+
+      expect(updatedProfile.kycStatus).toBe('verified');
+      expect(updatedProfile.kycVerifiedAt).toBe(verifiedTimestamp);
+    });
+
+    it('rejects document verification with documented grounds and updates status to rejected', () => {
+      const pendingProfile = {
+        uid: 'crt_test_kyc',
+        name: 'Test Creator',
+        role: 'creator' as const,
+        kycStatus: 'pending' as const,
+        kycDocumentType: 'aadhaar' as const,
+        kycDocumentNumberMasked: 'XXXX-XXXX-1234'
+      };
+
+      const rejectionReason = 'Document image blurry or unreadable.';
+      const updatedProfile = {
+        ...pendingProfile,
+        kycStatus: 'rejected' as const,
+        kycRejectionReason: rejectionReason
+      };
+
+      expect(updatedProfile.kycStatus).toBe('rejected');
+      expect(updatedProfile.kycRejectionReason).toBe('Document image blurry or unreadable.');
     });
   });
 

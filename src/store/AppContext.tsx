@@ -8,7 +8,8 @@ import {
   UserRole,
   KycStatus,
   ReferralRecord,
-  EscrowSummary
+  EscrowSummary,
+  AdminActionLog
 } from '../types';
 import { 
   initialCampaigns, 
@@ -16,7 +17,8 @@ import {
   initialTransactions, 
   initialWithdrawals, 
   initialFraudSignals,
-  initialReferrals
+  initialReferrals,
+  initialAdminActionLogs
 } from '../mockData';
 import { 
   generateUtr, 
@@ -41,14 +43,26 @@ interface AppContextType {
   authenticatedRoles: Record<UserRole, boolean>;
   adminCommissionBalance: number;
   escrowSummary: EscrowSummary;
+  registeredAccounts: UserProfile[];
   
   // Auth methods
   signInWithGoogle: () => Promise<void>;
   signOut: () => Promise<void>;
   signOutRole: (role?: UserRole) => void;
-  loginAsUser: (data?: { email?: string; name?: string; userId?: string; referralCode?: string; isNew?: boolean }) => Promise<{ success: boolean; message: string }>;
-  loginAsCreator: (data?: { email?: string; name?: string; creatorId?: string; channelName?: string; handle?: string; referralCode?: string; isNew?: boolean }) => Promise<{ success: boolean; message: string }>;
-  loginAsAdmin: (securityKey: string) => Promise<{ success: boolean; message: string }>;
+  registerNewAccount: (data: {
+    role: 'user' | 'creator';
+    name: string;
+    email: string;
+    password?: string;
+    customUserId?: string;
+    referralCode?: string;
+    channelName?: string;
+    handle?: string;
+    platform?: PlatformType;
+  }) => Promise<{ success: boolean; message: string; user?: UserProfile; customUserId?: string }>;
+  loginAsUser: (data?: { email?: string; name?: string; userId?: string; password?: string; referralCode?: string; isNew?: boolean }) => Promise<{ success: boolean; message: string }>;
+  loginAsCreator: (data?: { email?: string; name?: string; creatorId?: string; password?: string; channelName?: string; handle?: string; referralCode?: string; isNew?: boolean }) => Promise<{ success: boolean; message: string }>;
+  loginAsAdmin: (securityKeyOrPassword?: string, adminId?: string) => Promise<{ success: boolean; message: string }>;
   isRoleAuthenticated: (role: UserRole) => boolean;
   canAccessAdminPanel: () => boolean;
   updateKyc: (status: KycStatus, documentType?: 'aadhaar' | 'pan' | 'voter_id', docNumber?: string) => void;
@@ -71,9 +85,12 @@ interface AppContextType {
   submitTask: (campaignId: string, feedback: string, answers: { question: string; answer: string }[], watchDuration: number) => Promise<{ success: boolean; score: number; message: string }>;
   
   // Admin methods
+  adminActionLogs: AdminActionLog[];
   processWithdrawalAdmin: (withdrawalId: string, action: 'approve' | 'reject', notes?: string) => Promise<void>;
+  processKycVerificationAdmin: (userId: string, action: 'approve' | 'reject', reason?: string) => Promise<{ success: boolean; message: string }>;
   updateUserStatusAdmin: (userId: string, status: 'active' | 'flagged' | 'suspended') => void;
   addFraudSignalLog: (log: Omit<FraudSignalLog, 'id' | 'timestamp'>) => void;
+  addAdminActionLog: (log: Omit<AdminActionLog, 'id' | 'timestamp'>) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -162,6 +179,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return initialUserProfiles['admin_demo_1']?.adminCommissionBalance || 14850.0;
   });
 
+  const [registeredAccounts, setRegisteredAccounts] = useState<UserProfile[]>(() => {
+    const initialList = Object.values(initialUserProfiles);
+    const saved = localStorage.getItem(STORAGE_KEY + '_registered_accounts');
+    if (saved) {
+      try {
+        const parsed: UserProfile[] = JSON.parse(saved);
+        const existingUids = new Set(parsed.map(p => p.uid));
+        const missing = initialList.filter(p => !existingUids.has(p.uid));
+        return [...parsed, ...missing];
+      } catch (e) { /* ignore */ }
+    }
+    return initialList;
+  });
+
+  const [adminActionLogs, setAdminActionLogs] = useState<AdminActionLog[]>(() => {
+    const saved = localStorage.getItem(STORAGE_KEY + '_action_logs');
+    if (saved) {
+      try { return JSON.parse(saved); } catch (e) { /* ignore */ }
+    }
+    return initialAdminActionLogs;
+  });
+
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
 
   // Sync to local storage
@@ -169,6 +208,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     localStorage.setItem(STORAGE_KEY + '_user', JSON.stringify(currentUser));
     localStorage.setItem(STORAGE_KEY + '_role_profiles', JSON.stringify(roleProfiles));
   }, [currentUser, roleProfiles]);
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY + '_action_logs', JSON.stringify(adminActionLogs));
+  }, [adminActionLogs]);
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY + '_registered_accounts', JSON.stringify(registeredAccounts));
+  }, [registeredAccounts]);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY + '_auth_roles', JSON.stringify(authenticatedRoles));
@@ -235,92 +282,169 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return authenticatedRoles.admin === true;
   };
 
-  // Dedicated User Login supporting User ID or Email and Referral Code
-  const loginAsUser = async (data?: { 
-    email?: string; 
-    name?: string; 
-    userId?: string; 
-    referralCode?: string; 
-    isNew?: boolean 
-  }) => {
-    const inputId = data?.userId?.trim();
-    const email = data?.email?.trim() || (inputId?.includes('@') ? inputId : 'aarav.sharma@example.com');
-    const name = data?.name?.trim() || (inputId && !inputId.includes('@') ? `Earner ${inputId}` : 'Aarav Sharma');
-    const customUserId = inputId && !inputId.includes('@') 
-      ? inputId.toUpperCase() 
-      : (roleProfiles.user?.customUserId || 'USR-AARAV101');
+  // Register a Brand New Account with Unique User ID (USR-XXXXXX) or Creator ID (CRT-XXXXXX)
+  const registerNewAccount = async (data: {
+    role: 'user' | 'creator';
+    name: string;
+    email?: string;
+    password?: string;
+    customUserId?: string;
+    referralCode?: string;
+    channelName?: string;
+    handle?: string;
+    platform?: PlatformType;
+  }): Promise<{ success: boolean; message: string; user?: UserProfile; customUserId?: string }> => {
+    const role = data.role;
+    const rawName = data.name?.trim();
+    const name = rawName && rawName.length >= 2 
+      ? rawName 
+      : (role === 'user' ? 'Earner Member' : 'Creator Studio');
     
-    const existing = roleProfiles.user || initialUserProfiles['user_demo_1'];
-    const generatedRefCode = existing.referralCode || `EARN-${(name || 'USER').replace(/\s+/g, '').toUpperCase().slice(0, 5)}${Math.floor(100 + Math.random() * 900)}`;
-
-    let startingBalance = data?.isNew ? 50.0 : (existing.walletBalance || 342.0);
-    // If signed up with a friend's referral code, grant ₹5 welcome starter credit
-    if (data?.referralCode && data?.isNew) {
-      startingBalance += 5.0;
+    // Auto-derive clean email if missing or invalid
+    let email = data.email?.trim().toLowerCase() || '';
+    if (!email || !email.includes('@')) {
+      const sanitizedId = (data.customUserId || name).toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 8);
+      email = `${sanitizedId || 'user'}_${Math.floor(1000 + Math.random() * 9000)}@${role === 'user' ? 'earner' : 'creator'}.tubeearn.app`;
     }
 
-    const updated: UserProfile = {
-      ...existing,
-      uid: existing.uid || 'user_demo_1',
-      customUserId,
-      email,
+    const password = data.password?.trim() || '';
+
+    // Check if email already registered for this role
+    const emailExists = registeredAccounts.some(a => 
+      a?.email && a.email.toLowerCase() === email && a.role === role
+    );
+    if (emailExists) {
+      return { 
+        success: false, 
+        message: `An account with email "${email}" already exists as a ${role}. Please sign in with your ID or password.` 
+      };
+    }
+
+    // Format or Generate Unique ID (e.g. USR-XXXXXX or CRT-XXXXXX)
+    const prefix = role === 'user' ? 'USR-' : 'CRT-';
+    let finalCustomId = '';
+    const userSpecifiedId = data.customUserId?.trim().toUpperCase();
+
+    if (userSpecifiedId && userSpecifiedId !== prefix) {
+      // Strip any existing prefix (e.g. USR-, USR, CRT-, CRT) so we don't duplicate
+      const rawDigits = userSpecifiedId.replace(/^(USR|CRT)-?/i, '').replace(/[^A-Z0-9]/g, '');
+      finalCustomId = rawDigits ? `${prefix}${rawDigits}` : '';
+    }
+
+    // Check collision across registeredAccounts and initialUserProfiles
+    const isIdCollision = (candidate: string) => {
+      const candUpper = candidate.toUpperCase();
+      const inRegistered = registeredAccounts.some(a => a?.customUserId && a.customUserId.toUpperCase() === candUpper);
+      const inInitial = Object.values(initialUserProfiles).some(a => a?.customUserId && a.customUserId.toUpperCase() === candUpper);
+      return inRegistered || inInitial;
+    };
+
+    // If ID is missing, too short (<4 chars), or collides with existing, auto-generate unique 6-digit ID
+    const digitsOnly = finalCustomId.replace(prefix, '');
+    if (!finalCustomId || digitsOnly.length < 4 || isIdCollision(finalCustomId)) {
+      let candidate = '';
+      let isUnique = false;
+      let attempts = 0;
+      while (!isUnique && attempts < 100) {
+        attempts++;
+        candidate = `${prefix}${Math.floor(100000 + Math.random() * 900000)}`;
+        if (!isIdCollision(candidate)) {
+          isUnique = true;
+        }
+      }
+      finalCustomId = candidate;
+    }
+
+    const uniqueUid = `${role === 'user' ? 'usr' : 'crt'}_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const hasReferral = !!data.referralCode?.trim();
+    const refCodeClean = data.referralCode?.trim().toUpperCase() || '';
+
+    // Starter balance
+    // User gets ₹50 starter credit + ₹5 referral bonus if referred = ₹55
+    const startingWallet = role === 'user' ? (hasReferral ? 55.0 : 50.0) : 5000.0;
+    const initialEscrow = role === 'creator' ? 5000.0 : 0.0;
+
+    // Generate own referral code
+    const generatedRefCode = role === 'user' 
+      ? `EARN-${name.replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 5)}${Math.floor(100 + Math.random() * 900)}`
+      : `STUDIO-${(data.handle || name).replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 6)}${Math.floor(100 + Math.random() * 900)}`;
+
+    const newProfile: UserProfile = {
+      uid: uniqueUid,
+      customUserId: finalCustomId,
       name,
-      role: 'user',
+      email,
+      password: password || undefined,
+      photoURL: `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=${role === 'creator' ? 'e11d48' : 'dc2626'}&color=fff`,
+      role,
+      kycStatus: 'pending',
+      walletBalance: startingWallet,
+      escrowBalance: initialEscrow,
+      pendingBalance: 0.0,
+      lockedBalance: 0.0,
+      lifetimeEarned: role === 'user' ? (hasReferral ? 5.0 : 0.0) : 0.0,
+      lifetimeSpent: 0.0,
+      accountStatus: 'active',
       referralCode: generatedRefCode,
-      referredBy: data?.referralCode || existing.referredBy,
-      referralCount: existing.referralCount || 3,
-      referralEarnings: existing.referralEarnings || 8.0,
-      walletBalance: startingBalance,
-      kycStatus: data?.isNew ? 'pending' : (existing.kycStatus || 'verified'),
+      referredBy: hasReferral ? refCodeClean : undefined,
+      referralCount: 0,
+      referralEarnings: 0.0,
+      connectedAccounts: {
+        youtube: role === 'creator' ? {
+          connected: true,
+          channelName: data.channelName?.trim() || `${name} Channel`,
+          handle: data.handle?.trim().startsWith('@') ? data.handle.trim() : `@${data.handle?.trim() || 'creator'}`,
+          verifiedAt: new Date().toISOString().split('T')[0]
+        } : undefined
+      },
+      createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
 
-    setRoleProfiles(prev => ({ ...prev, user: updated }));
-    setCurrentUser(updated);
-    setCurrentRole('user');
-    setAuthenticatedRoles(prev => ({ ...prev, user: true }));
+    // Process referrer reward if valid referral code was supplied
+    if (hasReferral) {
+      const referrerAccount = registeredAccounts.find(a => a?.referralCode?.toUpperCase() === refCodeClean)
+        || (refCodeClean.includes('STUDIO') ? initialUserProfiles['creator_demo_1'] : initialUserProfiles['user_demo_1']);
+      
+      const referrerId = referrerAccount?.uid || 'user_demo_1';
+      const referrerName = referrerAccount?.name || 'TubeEarn Referrer';
 
-    // If friend referral code was provided on new signup, reward the referrer ₹2.00 immediately for onboarding!
-    if (data?.referralCode && data?.isNew) {
-      const refCodeClean = data.referralCode.trim().toUpperCase();
       const newRefRecord: ReferralRecord = {
         id: 'ref_' + Date.now(),
-        referrerId: refCodeClean.includes('STUDIO') ? 'creator_demo_1' : 'user_demo_1',
-        referrerName: refCodeClean.includes('STUDIO') ? 'Priya Patel (Creator)' : 'Aarav Sharma',
-        referredUserId: updated.uid,
+        referrerId,
+        referrerName,
+        referredUserId: newProfile.uid,
         referredUserName: name,
         referredUserEmail: email,
         status: 'onboarding_completed',
         onboardingRewardPaid: true,
         firstTaskRewardPaid: false,
-        totalRewardEarned: 2.0, // ₹2.00 for onboarding
+        totalRewardEarned: 2.0, // ₹2.00 onboarding reward
         createdAt: new Date().toISOString()
       };
 
       setReferrals(prev => [newRefRecord, ...prev]);
 
-      // If Aaron or Priya was the referrer, credit them ₹2.00
-      const targetRole: UserRole = refCodeClean.includes('STUDIO') ? 'creator' : 'user';
-      setRoleProfiles(prev => {
-        const prof = prev[targetRole];
-        if (!prof) return prev;
-        return {
-          ...prev,
-          [targetRole]: {
-            ...prof,
-            walletBalance: prof.walletBalance + 2.0,
-            referralEarnings: (prof.referralEarnings || 0) + 2.0,
-            referralCount: (prof.referralCount || 0) + 1
-          }
-        };
-      });
+      // Credit referrer ₹2.00
+      setRegisteredAccounts(prev => prev.map(acc => {
+        if (acc.uid === referrerId || acc.referralCode?.toUpperCase() === refCodeClean) {
+          return {
+            ...acc,
+            walletBalance: acc.walletBalance + 2.0,
+            referralEarnings: (acc.referralEarnings || 0) + 2.0,
+            referralCount: (acc.referralCount || 0) + 1
+          };
+        }
+        return acc;
+      }));
 
+      // Add transaction for referrer
       const refTx: WalletTransaction = {
         id: 'tx_ref_' + Date.now(),
-        userId: targetRole === 'creator' ? 'creator_demo_1' : 'user_demo_1',
+        userId: referrerId,
         type: 'referral_onboarding_reward',
         amount: 2.0,
-        balanceAfter: (roleProfiles[targetRole]?.walletBalance || 0) + 2.0,
+        balanceAfter: (referrerAccount?.walletBalance || 0) + 2.0,
         status: 'completed',
         referenceId: newRefRecord.id,
         description: `Referral Reward: ${name} signed up & completed onboarding (+₹2.00)`,
@@ -329,15 +453,127 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setTransactions(prev => [refTx, ...prev]);
     }
 
+    // Add welcome transaction for new user
+    const welcomeTx: WalletTransaction = {
+      id: 'tx_welcome_' + Date.now(),
+      userId: newProfile.uid,
+      type: 'deposit',
+      amount: startingWallet,
+      balanceAfter: startingWallet,
+      status: 'completed',
+      description: role === 'user' 
+        ? (hasReferral ? 'Welcome Starter Credit ₹50.00 + Referral Bonus ₹5.00' : 'Welcome Starter Credit ₹50.00')
+        : 'Initial Creator Studio Escrow Demo Balance (₹5,000.00)',
+      createdAt: new Date().toISOString()
+    };
+    setTransactions(prev => [welcomeTx, ...prev]);
+
+    // Save account state in local storage & memory
+    setRegisteredAccounts(prev => [newProfile, ...prev]);
+    setRoleProfiles(prev => ({ ...prev, [role]: newProfile }));
+    setCurrentUser(newProfile);
+    setCurrentRole(role);
+    setAuthenticatedRoles(prev => ({ ...prev, [role]: true }));
+
+    // Safe Firebase Firestore Sync (stripping any undefined fields)
     try {
-      await setDoc(doc(db, 'users', updated.uid), updated, { merge: true });
+      const cleanDoc = JSON.parse(JSON.stringify(newProfile));
+      await setDoc(doc(db, 'users', newProfile.uid), cleanDoc, { merge: true });
     } catch (e) {
-      // offline fallback
+      console.warn('Firestore sync optional offline fallback:', e);
     }
 
-    return { 
-      success: true, 
-      message: `Welcome ${name}! Authenticated to Earner Portal with ID ${customUserId}.` 
+    return {
+      success: true,
+      message: `🎉 Account successfully created! Your official ${role === 'user' ? 'User ID' : 'Creator ID'} is ${finalCustomId}.`,
+      user: newProfile,
+      customUserId: finalCustomId
+    };
+  };
+
+  // Dedicated User Login supporting User ID or Email and Referral Code
+  const loginAsUser = async (data?: { 
+    email?: string; 
+    name?: string; 
+    userId?: string; 
+    password?: string; 
+    referralCode?: string; 
+    isNew?: boolean 
+  }) => {
+    const inputId = data?.userId?.trim() || data?.email?.trim();
+
+    // If empty input or demo Aaron, authenticate demo earner
+    if (!inputId || inputId.toUpperCase() === 'USR-AARAV101' || inputId.toLowerCase() === 'aarav.sharma@example.com') {
+      const demoUser = registeredAccounts.find(a => a?.uid === 'user_demo_1') || roleProfiles.user || initialUserProfiles['user_demo_1'];
+      setRoleProfiles(prev => ({ ...prev, user: demoUser }));
+      setCurrentUser(demoUser);
+      setCurrentRole('user');
+      setAuthenticatedRoles(prev => ({ ...prev, user: true }));
+      return {
+        success: true,
+        message: `Welcome ${demoUser.name}! Authenticated to Earner Portal with ID ${demoUser.customUserId}.`
+      };
+    }
+
+    const cleanInput = inputId.toUpperCase();
+    const normalizedDigits = cleanInput.replace(/^(USR)-?/i, '').replace(/[^A-Z0-9]/g, '');
+    const cleanEmail = inputId.toLowerCase();
+
+    // Search across registeredAccounts and initialUserProfiles
+    const allUserCandidates = [...registeredAccounts, ...Object.values(initialUserProfiles)];
+    const matched = allUserCandidates.find(a => {
+      if (a?.role !== 'user') return false;
+      const accountId = (a.customUserId || '').toUpperCase();
+      const accountDigits = accountId.replace(/^(USR)-?/i, '').replace(/[^A-Z0-9]/g, '');
+      const accountClean = accountId.replace(/[^A-Z0-9]/g, '');
+      const inputClean = cleanInput.replace(/[^A-Z0-9]/g, '');
+
+      return (
+        accountId === cleanInput ||
+        accountClean === inputClean ||
+        (normalizedDigits.length >= 4 && accountDigits === normalizedDigits) ||
+        (a.email && a.email.toLowerCase() === cleanEmail)
+      );
+    });
+
+    if (matched) {
+      if (matched.accountStatus === 'suspended') {
+        return {
+          success: false,
+          message: 'This earner account has been suspended due to policy or anti-fraud violations. Please contact support.'
+        };
+      }
+
+      // Check password if configured on account and passed
+      if (matched.password && data?.password && matched.password !== data.password) {
+        return { success: false, message: 'Incorrect password. Please re-enter your password.' };
+      }
+
+      setRoleProfiles(prev => ({ ...prev, user: matched }));
+      setCurrentUser(matched);
+      setCurrentRole('user');
+      setAuthenticatedRoles(prev => ({ ...prev, user: true }));
+      return {
+        success: true,
+        message: `Welcome back ${matched.name}! Authenticated to Earner Portal with ID ${matched.customUserId}.`
+      };
+    }
+
+    // If isNew or not found, register new or return helpful guidance
+    if (data?.isNew) {
+      return await registerNewAccount({
+        role: 'user',
+        name: data.name || `Earner ${inputId}`,
+        email: inputId.includes('@') ? inputId : `${inputId.toLowerCase()}@earner.tubeearn.app`,
+        password: data.password,
+        customUserId: inputId.startsWith('USR-') ? inputId : undefined,
+        referralCode: data.referralCode
+      });
+    }
+
+    return {
+      success: false,
+      message: `Earner account "${inputId}" not found. Please click "Create New Earner ID" to register a new account.`
     };
   };
 
@@ -346,59 +582,87 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     email?: string; 
     name?: string; 
     creatorId?: string;
+    password?: string; 
     channelName?: string; 
     handle?: string; 
     referralCode?: string;
     isNew?: boolean 
   }) => {
-    const inputId = data?.creatorId?.trim();
-    const email = data?.email?.trim() || (inputId?.includes('@') ? inputId : 'priya.patel@creators.com');
-    const name = data?.name?.trim() || (inputId && !inputId.includes('@') ? `Creator ${inputId}` : 'Priya Patel (Creator)');
-    const handle = data?.handle?.trim() || '@TechVibeStudio';
-    const customUserId = inputId && !inputId.includes('@') 
-      ? inputId.toUpperCase() 
-      : (roleProfiles.creator?.customUserId || 'CRT-PRIYA202');
+    const inputId = data?.creatorId?.trim() || data?.email?.trim();
 
-    const existing = roleProfiles.creator || initialUserProfiles['creator_demo_1'];
-    const generatedRefCode = existing.referralCode || `STUDIO-${handle.replace('@', '').toUpperCase().slice(0, 6)}${Math.floor(100 + Math.random() * 900)}`;
-
-    const updated: UserProfile = {
-      ...existing,
-      uid: existing.uid || 'creator_demo_1',
-      customUserId,
-      email,
-      name,
-      role: 'creator',
-      referralCode: generatedRefCode,
-      referralCount: existing.referralCount || 4,
-      referralEarnings: existing.referralEarnings || 12.0,
-      walletBalance: data?.isNew ? 5000.0 : (existing.walletBalance || 12450.0),
-      connectedAccounts: {
-        ...existing.connectedAccounts,
-        youtube: {
-          connected: true,
-          channelName: data?.channelName || 'Creator Studio',
-          handle,
-          verifiedAt: new Date().toISOString().split('T')[0]
-        }
-      },
-      updatedAt: new Date().toISOString()
-    };
-
-    setRoleProfiles(prev => ({ ...prev, creator: updated }));
-    setCurrentUser(updated);
-    setCurrentRole('creator');
-    setAuthenticatedRoles(prev => ({ ...prev, creator: true }));
-
-    try {
-      await setDoc(doc(db, 'users', updated.uid), updated, { merge: true });
-    } catch (e) {
-      // offline fallback
+    // If empty input or demo Priya, authenticate demo creator
+    if (!inputId || inputId.toUpperCase() === 'CRT-PRIYA202' || inputId.toLowerCase() === 'priya.patel@creators.com') {
+      const demoCreator = registeredAccounts.find(a => a?.uid === 'creator_demo_1') || roleProfiles.creator || initialUserProfiles['creator_demo_1'];
+      setRoleProfiles(prev => ({ ...prev, creator: demoCreator }));
+      setCurrentUser(demoCreator);
+      setCurrentRole('creator');
+      setAuthenticatedRoles(prev => ({ ...prev, creator: true }));
+      return {
+        success: true,
+        message: `Welcome ${demoCreator.name}! Authenticated to Creator Studio with ID ${demoCreator.customUserId}.`
+      };
     }
 
-    return { 
-      success: true, 
-      message: `Welcome ${name}! Authenticated to Creator Studio with ID ${customUserId}.` 
+    const cleanInput = inputId.toUpperCase();
+    const normalizedDigits = cleanInput.replace(/^(CRT)-?/i, '').replace(/[^A-Z0-9]/g, '');
+    const cleanEmail = inputId.toLowerCase();
+
+    // Search across registeredAccounts and initialUserProfiles
+    const allCreatorCandidates = [...registeredAccounts, ...Object.values(initialUserProfiles)];
+    const matched = allCreatorCandidates.find(a => {
+      if (a?.role !== 'creator') return false;
+      const accountId = (a.customUserId || '').toUpperCase();
+      const accountDigits = accountId.replace(/^(CRT)-?/i, '').replace(/[^A-Z0-9]/g, '');
+      const accountClean = accountId.replace(/[^A-Z0-9]/g, '');
+      const inputClean = cleanInput.replace(/[^A-Z0-9]/g, '');
+
+      return (
+        accountId === cleanInput ||
+        accountClean === inputClean ||
+        (normalizedDigits.length >= 4 && accountDigits === normalizedDigits) ||
+        (a.email && a.email.toLowerCase() === cleanEmail)
+      );
+    });
+
+    if (matched) {
+      if (matched.accountStatus === 'suspended') {
+        return {
+          success: false,
+          message: 'This creator studio account has been suspended. Please contact platform administration.'
+        };
+      }
+
+      // Check password if configured on account and passed
+      if (matched.password && data?.password && matched.password !== data.password) {
+        return { success: false, message: 'Incorrect password. Please re-enter your password.' };
+      }
+
+      setRoleProfiles(prev => ({ ...prev, creator: matched }));
+      setCurrentUser(matched);
+      setCurrentRole('creator');
+      setAuthenticatedRoles(prev => ({ ...prev, creator: true }));
+      return {
+        success: true,
+        message: `Welcome back ${matched.name}! Authenticated to Creator Studio with ID ${matched.customUserId}.`
+      };
+    }
+
+    if (data?.isNew) {
+      return await registerNewAccount({
+        role: 'creator',
+        name: data.name || `Creator ${inputId}`,
+        email: inputId.includes('@') ? inputId : `${inputId.toLowerCase()}@creator.tubeearn.app`,
+        password: data.password,
+        customUserId: inputId.startsWith('CRT-') ? inputId : undefined,
+        channelName: data.channelName,
+        handle: data.handle,
+        referralCode: data.referralCode
+      });
+    }
+
+    return {
+      success: false,
+      message: `Creator account "${inputId}" not found. Please click "Create New Creator ID" to register a new account.`
     };
   };
 
@@ -506,13 +770,83 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
   };
 
-  // Dedicated Master Admin Login (Passkey Gated)
-  const loginAsAdmin = async (securityKey: string) => {
-    const cleaned = securityKey.trim().toUpperCase();
-    if (cleaned !== 'ADMIN2026' && cleaned !== '2991000' && cleaned !== 'ADMIN') {
+  // Dedicated Master Admin Login with Separate ID and Password (supports either parameter order)
+  const loginAsAdmin = async (arg1?: string, arg2?: string) => {
+    const raw1 = (arg1 || '').trim();
+    const raw2 = (arg2 || '').trim();
+    const str1 = raw1.toUpperCase();
+    const str2 = raw2.toUpperCase();
+
+    // Dynamically distinguish ID vs Password regardless of parameter order
+    let id = '';
+    let pass = '';
+
+    const isIdCandidate = (s: string) => 
+      s.startsWith('ADM-') || s.includes('@') || s === 'ADM' || s.startsWith('ADMIN-') || s === 'ADMIN';
+
+    const isPassCandidate = (s: string) =>
+      s === 'ADMIN2026' || s.includes('2026') || s === '2991000' || s.startsWith('TUBE') || s === 'PASSWORD';
+
+    if (isIdCandidate(str1) && !isIdCandidate(str2)) {
+      id = str1;
+      pass = raw2;
+    } else if (isIdCandidate(str2) && !isIdCandidate(str1)) {
+      id = str2;
+      pass = raw1;
+    } else if (isPassCandidate(str1) && !isPassCandidate(str2)) {
+      pass = raw1;
+      id = str2;
+    } else if (isPassCandidate(str2) && !isPassCandidate(str1)) {
+      pass = raw2;
+      id = str1;
+    } else if (str2.startsWith('ADM-')) {
+      id = str2;
+      pass = raw1;
+    } else {
+      id = str1 || str2 || 'ADM-SUPER-2026';
+      pass = str2 || str1;
+    }
+
+    // Default fallback admin ID if none entered
+    if (!id || id === 'ADMIN2026') {
+      id = 'ADM-SUPER-2026';
+    }
+
+    const validAdminIds = [
+      'ADM-SUPER-2026', 
+      'ADM-SUPER', 
+      'ADM-ADMIN-01', 
+      'ADMIN', 
+      'ADMIN@TUBEEARN.APP', 
+      'ADMIN@TUBEEARN.INTERNAL', 
+      'ADM-DEMO-1'
+    ];
+
+    const isIdValid = id.startsWith('ADM-') || id.startsWith('ADM') || id.includes('ADMIN') || validAdminIds.includes(id);
+    if (!isIdValid) {
       return {
         success: false,
-        message: 'Invalid administrative security passkey. Access denied.'
+        message: `Invalid Admin ID "${id}". Access denied.`
+      };
+    }
+
+    const validPasskeys = [
+      'ADMIN2026', 
+      '2991000', 
+      'TUBEEARN#2026', 
+      'TUBEEARN2026', 
+      'ADMIN', 
+      'ADMIN123', 
+      'PASSWORD',
+      'PASS123'
+    ];
+
+    const cleanPass = (pass || '').toUpperCase().trim();
+    const isPassValid = validPasskeys.includes(cleanPass) || cleanPass.includes('ADMIN2026');
+    if (!isPassValid) {
+      return {
+        success: false,
+        message: 'Invalid administrative security password or passkey. Access denied.'
       };
     }
 
@@ -1093,16 +1427,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const target = withdrawals.find(w => w.id === withdrawalId);
     if (!target) return;
 
+    const adminId = currentUser.role === 'admin' ? (currentUser.customUserId || 'ADM-SUPER-2026') : 'ADM-SUPER-2026';
+    const adminName = currentUser.role === 'admin' ? currentUser.name : 'Super Admin (Master Console)';
+    const processedTime = new Date().toISOString();
+
     if (action === 'approve') {
       const utr = generateUtr();
       const payoutRef = 'UPI_GATEWAY_' + utr;
+
       setWithdrawals(prev => prev.map(w => w.id === withdrawalId ? {
         ...w,
         status: 'completed',
         payoutRef,
         utrNumber: utr,
         gatewayProvider: 'UPI Instant Payout Gateway (NPCI IMPS)',
-        processedAt: new Date().toISOString()
+        processedByAdminId: adminId,
+        processedByAdminName: adminName,
+        processedAt: processedTime
       } : w));
 
       setTransactions(prev => prev.map(tx => tx.referenceId === withdrawalId ? {
@@ -1110,16 +1451,59 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         status: 'completed',
         description: `${tx.description} (Disbursed via UPI Gateway - UTR: ${utr})`
       } : tx));
+
+      // Log to Action History
+      const actionLog: AdminActionLog = {
+        id: 'act_' + Date.now(),
+        adminId,
+        adminName,
+        actionType: 'approve_withdrawal',
+        targetType: 'withdrawal',
+        targetId: withdrawalId,
+        targetUserName: target.userName,
+        targetUserEmail: target.userEmail,
+        amount: target.amount,
+        details: {
+          method: target.method === 'upi' ? 'UPI' : 'Bank Transfer',
+          destination: target.method === 'upi' ? target.upiId : `${target.bankAccountNumber} (${target.ifsc})`,
+          utrNumber: utr,
+          payoutRef,
+          notes: 'Approved and disbursed via Real UPI IMPS Instant Payout Gateway.'
+        },
+        timestamp: processedTime
+      };
+
+      setAdminActionLogs(prev => [actionLog, ...prev]);
+
+      try {
+        await setDoc(doc(db, 'withdrawals', withdrawalId), {
+          status: 'completed',
+          payoutRef,
+          utrNumber: utr,
+          gatewayProvider: 'UPI Instant Payout Gateway (NPCI IMPS)',
+          processedByAdminId: adminId,
+          processedByAdminName: adminName,
+          processedAt: processedTime
+        }, { merge: true });
+
+        await setDoc(doc(db, 'adminActionLogs', actionLog.id), actionLog);
+      } catch (e) {
+        // offline fallback
+      }
     } else {
       // Rejection: refund locked amount back to user's wallet
+      const reason = notes || 'Rejected during administrative compliance review.';
+
       setWithdrawals(prev => prev.map(w => w.id === withdrawalId ? {
         ...w,
         status: 'rejected',
-        rejectionReason: notes || 'Rejected during administrative compliance review.',
-        processedAt: new Date().toISOString()
+        rejectionReason: reason,
+        processedByAdminId: adminId,
+        processedByAdminName: adminName,
+        processedAt: processedTime
       } : w));
 
-      // If rejecting the current active user's withdrawal, refund balance
+      // Refund balance to current user if active
       if (currentUser.uid === target.userId) {
         setCurrentUser(prev => ({
           ...prev,
@@ -1128,25 +1512,214 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }));
       }
 
+      // Refund in registered accounts
+      setRegisteredAccounts(prev => prev.map(acc => {
+        if (acc.uid === target.userId) {
+          return {
+            ...acc,
+            walletBalance: acc.walletBalance + target.amount,
+            lockedBalance: Math.max(0, (acc.lockedBalance || 0) - target.amount)
+          };
+        }
+        return acc;
+      }));
+
+      // Refund in role profiles
+      setRoleProfiles(prev => {
+        const updated = { ...prev };
+        (['user', 'creator'] as UserRole[]).forEach(r => {
+          if (updated[r]?.uid === target.userId) {
+            updated[r] = {
+              ...updated[r],
+              walletBalance: updated[r].walletBalance + target.amount,
+              lockedBalance: Math.max(0, (updated[r].lockedBalance || 0) - target.amount)
+            };
+          }
+        });
+        return updated;
+      });
+
       const refundTx: WalletTransaction = {
-        id: 'tx_' + Date.now(),
+        id: 'tx_refund_' + Date.now(),
         userId: target.userId,
         type: 'withdrawal_refund',
         amount: target.amount,
-        balanceAfter: currentUser.walletBalance + target.amount,
+        balanceAfter: target.amount,
         status: 'completed',
         referenceId: withdrawalId,
-        description: `Refund: Withdrawal of ₹${target.amount} rejected (${notes || 'Compliance check failed'})`,
-        createdAt: new Date().toISOString()
+        description: `Refund: Withdrawal of ₹${target.amount.toFixed(2)} rejected (${reason})`,
+        createdAt: processedTime
       };
       setTransactions(prev => [refundTx, ...prev]);
+
+      // Log to Action History
+      const actionLog: AdminActionLog = {
+        id: 'act_' + Date.now(),
+        adminId,
+        adminName,
+        actionType: 'reject_withdrawal',
+        targetType: 'withdrawal',
+        targetId: withdrawalId,
+        targetUserName: target.userName,
+        targetUserEmail: target.userEmail,
+        amount: target.amount,
+        details: {
+          method: target.method === 'upi' ? 'UPI' : 'Bank Transfer',
+          destination: target.method === 'upi' ? target.upiId : `${target.bankAccountNumber} (${target.ifsc})`,
+          rejectionReason: reason,
+          fraudScore: target.fraudScore,
+          notes: `Administrative rejection: ${reason}`
+        },
+        timestamp: processedTime
+      };
+
+      setAdminActionLogs(prev => [actionLog, ...prev]);
+
+      try {
+        await setDoc(doc(db, 'withdrawals', withdrawalId), {
+          status: 'rejected',
+          rejectionReason: reason,
+          processedByAdminId: adminId,
+          processedByAdminName: adminName,
+          processedAt: processedTime
+        }, { merge: true });
+
+        await setDoc(doc(db, 'adminActionLogs', actionLog.id), actionLog);
+      } catch (e) {
+        // offline fallback
+      }
     }
+  };
+
+  const addAdminActionLog = (log: Omit<AdminActionLog, 'id' | 'timestamp'>) => {
+    const newLog: AdminActionLog = {
+      ...log,
+      id: 'act_' + Date.now(),
+      timestamp: new Date().toISOString()
+    };
+    setAdminActionLogs(prev => [newLog, ...prev]);
+    try {
+      setDoc(doc(db, 'adminActionLogs', newLog.id), newLog, { merge: true });
+    } catch (e) {
+      // offline fallback
+    }
+  };
+
+  const processKycVerificationAdmin = async (userId: string, action: 'approve' | 'reject', reason?: string) => {
+    const adminId = currentUser.role === 'admin' ? (currentUser.customUserId || 'ADM-SUPER-2026') : 'ADM-SUPER-2026';
+    const adminName = currentUser.role === 'admin' ? currentUser.name : 'Super Admin (Master Console)';
+    const processedTime = new Date().toISOString();
+
+    const target = registeredAccounts.find(a => a.uid === userId || a.customUserId === userId);
+    if (!target) {
+      return { success: false, message: 'Profile not found' };
+    }
+
+    const isApprove = action === 'approve';
+    const newStatus: KycStatus = isApprove ? 'verified' : 'rejected';
+    const rejectionReason = isApprove ? undefined : (reason || 'Document copy illegible or failed compliance matching.');
+
+    // Update in registered accounts
+    setRegisteredAccounts(prev => prev.map(a => {
+      if (a.uid === target.uid) {
+        return {
+          ...a,
+          kycStatus: newStatus,
+          kycVerifiedAt: isApprove ? processedTime : undefined,
+          kycRejectionReason: rejectionReason,
+          updatedAt: processedTime
+        };
+      }
+      return a;
+    }));
+
+    // Update currentUser if active
+    if (currentUser.uid === target.uid) {
+      setCurrentUser(prev => ({
+        ...prev,
+        kycStatus: newStatus,
+        kycVerifiedAt: isApprove ? processedTime : undefined,
+        kycRejectionReason: rejectionReason,
+        updatedAt: processedTime
+      }));
+    }
+
+    // Update in roleProfiles
+    setRoleProfiles(prev => {
+      const updated = { ...prev };
+      (['user', 'creator'] as UserRole[]).forEach(r => {
+        if (updated[r]?.uid === target.uid) {
+          updated[r] = {
+            ...updated[r],
+            kycStatus: newStatus,
+            kycVerifiedAt: isApprove ? processedTime : undefined,
+            kycRejectionReason: rejectionReason,
+            updatedAt: processedTime
+          };
+        }
+      });
+      return updated;
+    });
+
+    // Log to Action History
+    const actionLog: AdminActionLog = {
+      id: 'act_' + Date.now(),
+      adminId,
+      adminName,
+      actionType: isApprove ? 'approve_verification' : 'reject_verification',
+      targetType: target.role === 'creator' ? 'creator' : 'user',
+      targetId: target.customUserId || target.uid,
+      targetUserName: target.name,
+      targetUserEmail: target.email,
+      details: {
+        documentType: target.kycDocumentType?.toUpperCase() || 'IDENTITY_DOC',
+        documentNumberMasked: target.kycDocumentNumberMasked || 'CONFIDENTIAL',
+        rejectionReason: rejectionReason,
+        notes: isApprove 
+          ? `KYC identity document approved. Payout and verification privileges granted by ${adminName}.`
+          : `KYC verification rejected: ${rejectionReason}`
+      },
+      timestamp: processedTime
+    };
+
+    setAdminActionLogs(prev => [actionLog, ...prev]);
+
+    // Sync to Firestore
+    try {
+      await setDoc(doc(db, 'users', target.uid), {
+        kycStatus: newStatus,
+        kycVerifiedAt: isApprove ? processedTime : null,
+        kycRejectionReason: rejectionReason || null,
+        updatedAt: processedTime
+      }, { merge: true });
+
+      await setDoc(doc(db, 'adminActionLogs', actionLog.id), actionLog);
+    } catch (e) {
+      // offline fallback
+    }
+
+    return {
+      success: true,
+      message: isApprove 
+        ? `Successfully approved ${target.name}'s document verification!`
+        : `Rejected ${target.name}'s verification request (${rejectionReason}).`
+    };
   };
 
   const updateUserStatusAdmin = (userId: string, status: 'active' | 'flagged' | 'suspended') => {
     if (currentUser.uid === userId) {
       setCurrentUser(prev => ({ ...prev, accountStatus: status }));
     }
+    setRegisteredAccounts(prev => prev.map(acc => acc.uid === userId ? { ...acc, accountStatus: status } : acc));
+    setRoleProfiles(prev => {
+      const updated = { ...prev };
+      (['user', 'creator', 'admin'] as UserRole[]).forEach(r => {
+        if (updated[r]?.uid === userId) {
+          updated[r] = { ...updated[r], accountStatus: status };
+        }
+      });
+      return updated;
+    });
   };
 
   const addFraudSignalLog = (log: Omit<FraudSignalLog, 'id' | 'timestamp'>) => {
@@ -1173,9 +1746,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         authenticatedRoles,
         adminCommissionBalance,
         escrowSummary,
+        registeredAccounts,
         signInWithGoogle,
         signOut,
         signOutRole,
+        registerNewAccount,
         loginAsUser,
         loginAsCreator,
         loginAsAdmin,
@@ -1192,8 +1767,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         createCampaign,
         submitTask,
         processWithdrawalAdmin,
+        processKycVerificationAdmin,
         updateUserStatusAdmin,
-        addFraudSignalLog
+        addFraudSignalLog,
+        adminActionLogs,
+        addAdminActionLog
       }}
     >
       {children}

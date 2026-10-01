@@ -12,11 +12,17 @@ export interface UserProfile {
   kycStatus: KycStatus;
   kycDocumentType?: 'aadhaar' | 'pan' | 'voter_id';
   kycDocumentNumberMasked?: string;
+  kycSubmittedAt?: string;
+  kycVerifiedAt?: string;
+  kycRejectionReason?: string;
+  channelName?: string;
+  handle?: string;
   walletBalance: number; // ₹ available
   pendingBalance: number; // ₹ in settlement review
   lockedBalance: number; // ₹ locked for campaigns/withdrawal
   lifetimeEarned: number;
   lifetimeSpent: number;
+  password?: string; // Stored hash or password for created accounts
   escrowBalance?: number; // ₹ held in creator escrow or keep in app
   adminCommissionBalance?: number; // ₹ platform commission accumulated for admin
   accountStatus: 'active' | 'flagged' | 'suspended';
@@ -164,8 +170,36 @@ export interface WithdrawalRequest {
   gatewayProvider?: string; // e.g. 'UPI Payout Gateway (NPCI IMPS)'
   isCommissionWithdrawal?: boolean; // Admin commission payout
   rejectionReason?: string;
+  fraudScore?: number; // 0-100 fraud risk indicator
+  flaggedSignals?: string[];
+  processedByAdminId?: string; // Who approved or rejected this request
+  processedByAdminName?: string;
   createdAt: string;
   processedAt?: string;
+}
+
+export interface AdminActionLog {
+  id: string;
+  adminId: string; // e.g. 'ADM-SUPER-2026'
+  adminName: string; // e.g. 'Super Admin (Master Console)'
+  actionType: 'approve_withdrawal' | 'reject_withdrawal' | 'approve_verification' | 'reject_verification' | 'suspend_user' | 'flag_user' | 'commission_withdrawal';
+  targetType: 'withdrawal' | 'user' | 'creator' | 'commission';
+  targetId: string; // e.g. 'wdr_501' or 'usr_demo_1'
+  targetUserName?: string;
+  targetUserEmail?: string;
+  amount?: number;
+  details?: {
+    method?: string;
+    destination?: string;
+    utrNumber?: string;
+    payoutRef?: string;
+    rejectionReason?: string;
+    fraudScore?: number;
+    documentType?: string;
+    documentNumberMasked?: string;
+    notes?: string;
+  };
+  timestamp: string;
 }
 
 export interface EscrowSummary {

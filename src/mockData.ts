@@ -1,4 +1,4 @@
-import { Campaign, UserProfile, WalletTransaction, WithdrawalRequest, FraudSignalLog, ReferralRecord } from './types';
+import { Campaign, UserProfile, WalletTransaction, WithdrawalRequest, FraudSignalLog, ReferralRecord, AdminActionLog } from './types';
 
 export const initialCampaigns: Campaign[] = [
   {
@@ -154,6 +154,7 @@ export const initialUserProfiles: Record<string, UserProfile> = {
     kycStatus: 'verified',
     kycDocumentType: 'pan',
     kycDocumentNumberMasked: 'ABCDE1234F',
+    kycVerifiedAt: '2026-08-20T10:00:00Z',
     walletBalance: 12450.0,
     escrowBalance: 16950.0, // Total escrow in app (12450 available + 4500 campaign lock)
     pendingBalance: 0.0,
@@ -177,6 +178,122 @@ export const initialUserProfiles: Record<string, UserProfile> = {
     },
     createdAt: '2026-08-15T09:00:00Z',
     updatedAt: '2026-09-29T01:30:00Z'
+  },
+  'user_demo_2': {
+    uid: 'user_demo_2',
+    customUserId: 'USR-ROHAN404',
+    name: 'Rohan Mehra',
+    email: 'rohan.m@example.com',
+    photoURL: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=120&q=80',
+    role: 'user',
+    kycStatus: 'pending',
+    kycDocumentType: 'pan',
+    kycDocumentNumberMasked: 'ABCDE9842K',
+    kycSubmittedAt: '2026-09-30T14:20:00Z',
+    walletBalance: 450.0,
+    pendingBalance: 0.0,
+    lockedBalance: 450.0,
+    lifetimeEarned: 890.0,
+    lifetimeSpent: 0.0,
+    accountStatus: 'active',
+    referralCode: 'EARN-ROHAN',
+    referralCount: 1,
+    referralEarnings: 4.0,
+    connectedAccounts: {
+      youtube: { connected: true, channelName: 'Rohan Gaming & Vlogs', handle: '@rohanvlogs', verifiedAt: '2026-09-20' }
+    },
+    bankDetails: {
+      upiId: 'rohan.mehra@icici',
+      accountHolderName: 'Rohan Mehra',
+      bankName: 'State Bank of India',
+      accountNumberMasked: 'XXXXXX4819',
+      ifsc: 'SBIN0004921'
+    },
+    createdAt: '2026-09-18T10:00:00Z',
+    updatedAt: '2026-09-30T14:20:00Z'
+  },
+  'user_demo_3': {
+    uid: 'user_demo_3',
+    customUserId: 'USR-PRIYAV',
+    name: 'Priya Verma',
+    email: 'priya.v@gmail.com',
+    photoURL: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=120&q=80',
+    role: 'user',
+    kycStatus: 'pending',
+    kycDocumentType: 'aadhaar',
+    kycDocumentNumberMasked: 'XXXX-XXXX-8924',
+    kycSubmittedAt: '2026-10-01T08:15:00Z',
+    walletBalance: 350.0,
+    pendingBalance: 0.0,
+    lockedBalance: 350.0,
+    lifetimeEarned: 520.0,
+    lifetimeSpent: 0.0,
+    accountStatus: 'active',
+    referralCode: 'EARN-PRIYAV',
+    connectedAccounts: {},
+    bankDetails: {
+      upiId: 'priya.v@okhdfcbank',
+      accountHolderName: 'Priya Verma',
+      bankName: 'HDFC Bank Ltd',
+      accountNumberMasked: 'XXXXXX7812',
+      ifsc: 'HDFC0001004'
+    },
+    createdAt: '2026-09-25T11:00:00Z',
+    updatedAt: '2026-10-01T08:15:00Z'
+  },
+  'creator_demo_2': {
+    uid: 'creator_demo_2',
+    customUserId: 'CRT-TECHVIBE',
+    name: 'Vikram Singh (TechVibe)',
+    email: 'vikram.singh@techvibe.in',
+    photoURL: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=120&q=80',
+    role: 'creator',
+    channelName: 'TechVibe India',
+    handle: '@TechVibeIndia',
+    kycStatus: 'pending',
+    kycDocumentType: 'pan',
+    kycDocumentNumberMasked: 'BGVPS1928M',
+    kycSubmittedAt: '2026-09-29T18:45:00Z',
+    walletBalance: 18500.0,
+    escrowBalance: 24500.0,
+    pendingBalance: 0.0,
+    lockedBalance: 6000.0,
+    lifetimeEarned: 0.0,
+    lifetimeSpent: 42000.0,
+    accountStatus: 'active',
+    referralCode: 'STUDIO-TECHVIBE',
+    connectedAccounts: {
+      youtube: { connected: true, channelName: 'TechVibe India', handle: '@TechVibeIndia', verifiedAt: '2026-09-29' }
+    },
+    createdAt: '2026-09-01T10:00:00Z',
+    updatedAt: '2026-09-29T18:45:00Z'
+  },
+  'creator_demo_3': {
+    uid: 'creator_demo_3',
+    customUserId: 'CRT-ANANYAFIT',
+    name: 'Ananya Sharma',
+    email: 'ananya.fit@gmail.com',
+    photoURL: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=120&q=80',
+    role: 'creator',
+    channelName: 'Ananya Fitness & Wellness',
+    handle: '@ananyafit',
+    kycStatus: 'pending',
+    kycDocumentType: 'aadhaar',
+    kycDocumentNumberMasked: 'XXXX-XXXX-5521',
+    kycSubmittedAt: '2026-10-01T09:30:00Z',
+    walletBalance: 8200.0,
+    escrowBalance: 8200.0,
+    pendingBalance: 0.0,
+    lockedBalance: 0.0,
+    lifetimeEarned: 0.0,
+    lifetimeSpent: 12000.0,
+    accountStatus: 'active',
+    referralCode: 'STUDIO-ANANYA',
+    connectedAccounts: {
+      youtube: { connected: true, channelName: 'Ananya Fitness & Wellness', handle: '@ananyafit', verifiedAt: '2026-10-01' }
+    },
+    createdAt: '2026-09-22T08:00:00Z',
+    updatedAt: '2026-10-01T09:30:00Z'
   },
   'admin_demo_1': {
     uid: 'admin_demo_1',
@@ -265,7 +382,11 @@ export const initialWithdrawals: WithdrawalRequest[] = [
     method: 'upi',
     upiId: 'aarav@okaxis',
     status: 'completed',
-    payoutRef: 'UPI_RR_98321049281',
+    utrNumber: '269814029184',
+    payoutRef: 'UPI_GATEWAY_269814029184',
+    gatewayProvider: 'UPI Instant Payout Gateway (NPCI IMPS)',
+    processedByAdminId: 'ADM-SUPER-2026',
+    processedByAdminName: 'Super Admin (Master Console)',
     createdAt: '2026-09-25T11:20:00Z',
     processedAt: '2026-09-25T12:05:00Z'
   },
@@ -280,7 +401,107 @@ export const initialWithdrawals: WithdrawalRequest[] = [
     ifsc: 'SBIN0004921',
     accountHolderName: 'Rohan Mehra',
     status: 'pending',
+    fraudScore: 8,
     createdAt: '2026-09-29T01:10:00Z'
+  },
+  {
+    id: 'wdr_503',
+    userId: 'user_demo_3',
+    userName: 'Priya Verma',
+    userEmail: 'priya.v@gmail.com',
+    amount: 350.0, // >= ₹299
+    method: 'upi',
+    upiId: 'priya.v@okhdfcbank',
+    status: 'pending',
+    fraudScore: 14,
+    createdAt: '2026-09-30T10:15:00Z'
+  },
+  {
+    id: 'wdr_504',
+    userId: 'user_flagged_88',
+    userName: 'FastBot Syndicate #9',
+    userEmail: 'bot.cluster99@tempmail.com',
+    amount: 299.0, // >= ₹299
+    method: 'upi',
+    upiId: 'syndicate99@paytm',
+    status: 'pending',
+    fraudScore: 94,
+    flaggedSignals: [
+      'Automated headless script submission pattern',
+      'Watch velocity: 4s logged for 90s required task',
+      'Identical 32-character review feedback across 12 accounts'
+    ],
+    createdAt: '2026-10-01T04:30:00Z'
+  },
+  {
+    id: 'wdr_505',
+    userId: 'user_demo_4',
+    userName: 'Kavita Sundaram',
+    userEmail: 'kavita.s@example.com',
+    amount: 520.0, // >= ₹299
+    method: 'upi',
+    upiId: 'kavita@icici',
+    status: 'pending',
+    fraudScore: 5,
+    createdAt: '2026-10-01T08:00:00Z'
+  },
+  {
+    id: 'wdr_506',
+    userId: 'user_flagged_77',
+    userName: 'AutoSpam Network',
+    userEmail: 'spamnetwork@fakeinbox.cc',
+    amount: 310.0, // >= ₹299
+    method: 'upi',
+    upiId: 'autospammer@upi',
+    status: 'rejected',
+    rejectionReason: 'Fraudulent attempt: Automated bot velocity detected with duplicate copy-paste feedback across 8 earner accounts.',
+    fraudScore: 98,
+    flaggedSignals: ['Bot velocity anomaly', 'Duplicate cross-account feedback'],
+    processedByAdminId: 'ADM-SUPER-2026',
+    processedByAdminName: 'Super Admin (Master Console)',
+    createdAt: '2026-09-28T14:00:00Z',
+    processedAt: '2026-09-28T14:45:00Z'
+  }
+];
+
+export const initialAdminActionLogs: AdminActionLog[] = [
+  {
+    id: 'act_log_101',
+    adminId: 'ADM-SUPER-2026',
+    adminName: 'Super Admin (Master Console)',
+    actionType: 'approve_withdrawal',
+    targetType: 'withdrawal',
+    targetId: 'wdr_501',
+    targetUserName: 'Aarav Sharma',
+    targetUserEmail: 'aarav.sharma@example.com',
+    amount: 320.0,
+    details: {
+      method: 'UPI',
+      destination: 'aarav@okaxis',
+      utrNumber: '269814029184',
+      payoutRef: 'UPI_GATEWAY_269814029184',
+      notes: 'Approved & settled via NPCI IMPS Instant UPI Payout Gateway.'
+    },
+    timestamp: '2026-09-25T12:05:00Z'
+  },
+  {
+    id: 'act_log_102',
+    adminId: 'ADM-SUPER-2026',
+    adminName: 'Super Admin (Master Console)',
+    actionType: 'reject_withdrawal',
+    targetType: 'withdrawal',
+    targetId: 'wdr_506',
+    targetUserName: 'AutoSpam Network',
+    targetUserEmail: 'spamnetwork@fakeinbox.cc',
+    amount: 310.0,
+    details: {
+      method: 'UPI',
+      destination: 'autospammer@upi',
+      rejectionReason: 'Fraudulent attempt: Automated bot velocity detected with duplicate copy-paste feedback across 8 earner accounts.',
+      fraudScore: 98,
+      notes: 'Account flagged and funds refunded to escrow/balance pool.'
+    },
+    timestamp: '2026-09-28T14:45:00Z'
   }
 ];
 

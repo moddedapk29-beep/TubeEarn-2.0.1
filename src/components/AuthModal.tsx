@@ -25,12 +25,16 @@ interface AuthModalProps {
   isOpen: boolean;
   onClose: () => void;
   initialRole?: UserRole;
+  initialId?: string;
+  onOpenRegisterPage?: (role?: 'user' | 'creator') => void;
 }
 
 export const AuthModal: React.FC<AuthModalProps> = ({ 
   isOpen, 
   onClose, 
-  initialRole = 'user' 
+  initialRole = 'user',
+  initialId,
+  onOpenRegisterPage
 }) => {
   const { 
     currentRole, 
@@ -38,6 +42,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     loginAsUser, 
     loginAsCreator, 
     loginAsAdmin, 
+    registerNewAccount,
     signInWithGoogle,
     isGoogleLoading 
   } = useApp();
@@ -46,75 +51,106 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
   
   // User Form (User ID or Email)
-  const [userIdOrEmail, setUserIdOrEmail] = useState('USR-AARAV101');
+  const [userIdOrEmail, setUserIdOrEmail] = useState('');
   const [userName, setUserName] = useState('');
   const [userPassword, setUserPassword] = useState('');
   const [userReferralCode, setUserReferralCode] = useState('');
   
   // Creator Form (Creator ID or Email)
-  const [creatorIdOrEmail, setCreatorIdOrEmail] = useState('CRT-PRIYA202');
+  const [creatorIdOrEmail, setCreatorIdOrEmail] = useState('');
   const [creatorName, setCreatorName] = useState('');
   const [creatorChannel, setCreatorChannel] = useState('');
   const [creatorPassword, setCreatorPassword] = useState('');
   const [creatorReferralCode, setCreatorReferralCode] = useState('');
   const [creatorPlatform, setCreatorPlatform] = useState<'youtube' | 'instagram' | 'facebook'>('youtube');
   
-  // Admin Form (Passkey Gated)
-  const [adminSecurityKey, setAdminSecurityKey] = useState('');
+  // Admin Form (Separate ID & Password)
+  const [adminId, setAdminId] = useState('ADM-SUPER-2026');
+  const [adminSecurityKey, setAdminSecurityKey] = useState('ADMIN2026');
   const [showAdminKey, setShowAdminKey] = useState(false);
   
   // Status states
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [copiedLink, setCopiedLink] = useState<'user' | 'creator' | null>(null);
+  const [copiedLink, setCopiedLink] = useState<'user' | 'creator' | 'admin' | null>(null);
 
   // Sync tab with initialRole if prop changes
   React.useEffect(() => {
     setActiveTab(initialRole);
     setErrorMessage(null);
     setSuccessMessage(null);
-  }, [initialRole, isOpen]);
+    if (initialRole === 'user') {
+      setUserIdOrEmail(initialId || 'USR-AARAV101');
+    } else if (initialRole === 'creator') {
+      setCreatorIdOrEmail(initialId || 'CRT-PRIYA202');
+    }
+  }, [initialRole, initialId, isOpen]);
+
+  // When switching to signup mode, clear out prefilled demo IDs so user registers clean
+  const handleToggleAuthMode = (newMode: 'signin' | 'signup') => {
+    setAuthMode(newMode);
+    setErrorMessage(null);
+    setSuccessMessage(null);
+    if (newMode === 'signup') {
+      if (userIdOrEmail === 'USR-AARAV101') setUserIdOrEmail('');
+      if (creatorIdOrEmail === 'CRT-PRIYA202') setCreatorIdOrEmail('');
+    } else {
+      if (!userIdOrEmail && activeTab === 'user') setUserIdOrEmail(initialId || 'USR-AARAV101');
+      if (!creatorIdOrEmail && activeTab === 'creator') setCreatorIdOrEmail(initialId || 'CRT-PRIYA202');
+    }
+  };
 
   if (!isOpen) return null;
 
   const origin = typeof window !== 'undefined' ? window.location.origin : 'https://tubeearn.app';
 
-  const copyPortalLink = (role: 'user' | 'creator') => {
+  const copyPortalLink = (role: 'user' | 'creator' | 'admin') => {
     const url = `${origin}/?portal=${role}`;
     navigator.clipboard.writeText(url);
     setCopiedLink(role);
     setTimeout(() => setCopiedLink(null), 2000);
   };
 
-  // Handle User Login
+  // Handle User Login / Register
   const handleUserAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
     setIsSubmitting(true);
 
     try {
-      const input = userIdOrEmail.trim() || 'USR-AARAV101';
-      const isEmail = input.includes('@');
-      const email = isEmail ? input : 'aarav.sharma@example.com';
-      const userId = isEmail ? undefined : input.toUpperCase();
-      const name = userName.trim() || (authMode === 'signup' ? 'New Earner' : 'Aarav Sharma');
-      
-      const res = await loginAsUser({ 
-        email, 
-        name, 
-        userId,
-        referralCode: userReferralCode.trim() || undefined,
-        isNew: authMode === 'signup' 
-      });
-      if (res.success) {
-        setSuccessMessage(res.message);
-        confetti({ particleCount: 50, spread: 60, origin: { y: 0.6 } });
-        setTimeout(() => {
-          onClose();
-        }, 1200);
+      if (authMode === 'signup') {
+        const res = await registerNewAccount({
+          role: 'user',
+          name: userName.trim() || 'New Earner',
+          email: userIdOrEmail.includes('@') ? userIdOrEmail.trim() : `${userIdOrEmail.trim().toLowerCase()}@earner.tubeearn.app`,
+          password: userPassword.trim(),
+          customUserId: userIdOrEmail.startsWith('USR-') ? userIdOrEmail.trim().toUpperCase() : undefined,
+          referralCode: userReferralCode.trim() || undefined
+        });
+
+        if (res.success) {
+          setSuccessMessage(res.message);
+          confetti({ particleCount: 60, spread: 70, origin: { y: 0.6 } });
+          setTimeout(() => onClose(), 1400);
+        } else {
+          setErrorMessage(res.message);
+        }
       } else {
-        setErrorMessage(res.message);
+        const input = userIdOrEmail.trim() || 'USR-AARAV101';
+        const res = await loginAsUser({ 
+          userId: input,
+          email: input.includes('@') ? input : undefined,
+          password: userPassword.trim()
+        });
+
+        if (res.success) {
+          setSuccessMessage(res.message);
+          confetti({ particleCount: 50, spread: 60, origin: { y: 0.6 } });
+          setTimeout(() => onClose(), 1200);
+        } else {
+          setErrorMessage(res.message);
+        }
       }
     } catch (err: any) {
       setErrorMessage(err.message || 'Authentication failed');
@@ -130,8 +166,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     const res = await loginAsUser({
       userId: 'USR-AARAV101',
       email: 'aarav.sharma@example.com',
-      name: 'Aarav Sharma',
-      isNew: false
+      name: 'Aarav Sharma'
     });
     setIsSubmitting(false);
     if (res.success) {
@@ -141,38 +176,48 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     }
   };
 
-  // Handle Creator Login
+  // Handle Creator Login / Register
   const handleCreatorAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
     setIsSubmitting(true);
 
     try {
-      const input = creatorIdOrEmail.trim() || 'CRT-PRIYA202';
-      const isEmail = input.includes('@');
-      const email = isEmail ? input : 'priya.patel@creators.com';
-      const creatorId = isEmail ? undefined : input.toUpperCase();
-      const name = creatorName.trim() || (authMode === 'signup' ? 'New Studio Creator' : 'Priya Patel (Creator)');
-      const channel = creatorChannel.trim() || '@TechVibeStudio';
+      if (authMode === 'signup') {
+        const res = await registerNewAccount({
+          role: 'creator',
+          name: creatorName.trim() || 'New Studio Creator',
+          email: creatorIdOrEmail.includes('@') ? creatorIdOrEmail.trim() : `${creatorIdOrEmail.trim().toLowerCase()}@creator.tubeearn.app`,
+          password: creatorPassword.trim(),
+          customUserId: creatorIdOrEmail.startsWith('CRT-') ? creatorIdOrEmail.trim().toUpperCase() : undefined,
+          channelName: creatorChannel.trim() || 'Creator Studio Channel',
+          handle: creatorChannel.startsWith('@') ? creatorChannel.trim() : `@${creatorChannel.trim() || 'creator'}`,
+          platform: creatorPlatform,
+          referralCode: creatorReferralCode.trim() || undefined
+        });
 
-      const res = await loginAsCreator({
-        email,
-        name,
-        creatorId,
-        channelName: channel,
-        handle: channel.startsWith('@') ? channel : `@${channel}`,
-        referralCode: creatorReferralCode.trim() || undefined,
-        isNew: authMode === 'signup'
-      });
-
-      if (res.success) {
-        setSuccessMessage(res.message);
-        confetti({ particleCount: 60, spread: 70, origin: { y: 0.6 } });
-        setTimeout(() => {
-          onClose();
-        }, 1200);
+        if (res.success) {
+          setSuccessMessage(res.message);
+          confetti({ particleCount: 60, spread: 70, origin: { y: 0.6 } });
+          setTimeout(() => onClose(), 1400);
+        } else {
+          setErrorMessage(res.message);
+        }
       } else {
-        setErrorMessage(res.message);
+        const input = creatorIdOrEmail.trim() || 'CRT-PRIYA202';
+        const res = await loginAsCreator({
+          creatorId: input,
+          email: input.includes('@') ? input : undefined,
+          password: creatorPassword.trim()
+        });
+
+        if (res.success) {
+          setSuccessMessage(res.message);
+          confetti({ particleCount: 60, spread: 70, origin: { y: 0.6 } });
+          setTimeout(() => onClose(), 1200);
+        } else {
+          setErrorMessage(res.message);
+        }
       }
     } catch (err: any) {
       setErrorMessage(err.message || 'Creator authentication failed');
@@ -188,10 +233,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     const res = await loginAsCreator({
       creatorId: 'CRT-PRIYA202',
       email: 'priya.patel@creators.com',
-      name: 'Priya Patel (Creator)',
-      channelName: 'Priya Studio Reviews',
-      handle: '@priyastudios',
-      isNew: false
+      name: 'Priya Patel (Creator)'
     });
     setIsSubmitting(false);
     if (res.success) {
@@ -201,14 +243,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     }
   };
 
-  // Handle Admin Login (Passkey Gated)
+  // Handle Admin Login (Separate ID & Password)
   const handleAdminAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
     setIsSubmitting(true);
 
     try {
-      const res = await loginAsAdmin(adminSecurityKey);
+      const res = await loginAsAdmin(adminSecurityKey, adminId);
       if (res.success) {
         setSuccessMessage(res.message);
         confetti({ particleCount: 70, spread: 70, origin: { y: 0.6 } });
@@ -229,7 +271,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const handleQuickAdminDemo = async () => {
     setIsSubmitting(true);
     setErrorMessage(null);
-    const res = await loginAsAdmin('ADMIN2026');
+    const res = await loginAsAdmin('ADMIN2026', 'ADM-SUPER-2026');
     setIsSubmitting(false);
     if (res.success) {
       setSuccessMessage(res.message);
@@ -352,17 +394,31 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               </div>
 
               {/* Mode switch */}
-              <div className="flex items-center justify-between text-xs">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between text-xs gap-2">
                 <span className="font-bold text-slate-200">
                   {authMode === 'signin' ? 'Sign In with User ID or Email' : 'Register New Earner Account'}
                 </span>
-                <button
-                  type="button"
-                  onClick={() => setAuthMode(authMode === 'signin' ? 'signup' : 'signin')}
-                  className="text-red-400 hover:text-red-300 font-semibold"
-                >
-                  {authMode === 'signin' ? 'Need an account? Register' : 'Already have account? Sign In'}
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleToggleAuthMode(authMode === 'signin' ? 'signup' : 'signin')}
+                    className="text-red-400 hover:text-red-300 font-semibold"
+                  >
+                    {authMode === 'signin' ? 'Quick Register' : 'Sign In'}
+                  </button>
+                  {onOpenRegisterPage && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onClose();
+                        onOpenRegisterPage('user');
+                      }}
+                      className="px-2 py-0.5 rounded bg-red-500/10 text-red-300 border border-red-500/30 text-[11px] font-bold hover:bg-red-500/20"
+                    >
+                      ✨ Open ID Generator
+                    </button>
+                  )}
+                </div>
               </div>
 
               <form onSubmit={handleUserAuth} className="space-y-3">
@@ -498,17 +554,31 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               </div>
 
               {/* Mode switch */}
-              <div className="flex items-center justify-between text-xs">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between text-xs gap-2">
                 <span className="font-bold text-slate-200">
                   {authMode === 'signin' ? 'Creator Studio Sign In' : 'Register New Studio'}
                 </span>
-                <button
-                  type="button"
-                  onClick={() => setAuthMode(authMode === 'signin' ? 'signup' : 'signin')}
-                  className="text-rose-400 hover:text-rose-300 font-semibold"
-                >
-                  {authMode === 'signin' ? 'New creator? Register Studio' : 'Existing creator? Sign In'}
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleToggleAuthMode(authMode === 'signin' ? 'signup' : 'signin')}
+                    className="text-rose-400 hover:text-rose-300 font-semibold"
+                  >
+                    {authMode === 'signin' ? 'Quick Register' : 'Sign In'}
+                  </button>
+                  {onOpenRegisterPage && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onClose();
+                        onOpenRegisterPage('creator');
+                      }}
+                      className="px-2 py-0.5 rounded bg-rose-500/10 text-rose-300 border border-rose-500/30 text-[11px] font-bold hover:bg-rose-500/20"
+                    >
+                      ✨ Open ID Generator
+                    </button>
+                  )}
+                </div>
               </div>
 
               <form onSubmit={handleCreatorAuth} className="space-y-3">
@@ -648,14 +718,30 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               </div>
 
               <form onSubmit={handleAdminAuth} className="space-y-3">
+                {/* Separate Link for Admin */}
+                <div className="p-3 rounded-xl bg-slate-950 border border-amber-500/20 text-xs flex items-center justify-between gap-2">
+                  <div className="truncate">
+                    <span className="text-[10px] uppercase font-bold text-amber-400 block">Separate Admin Link</span>
+                    <span className="font-mono text-slate-400 text-[11px] truncate block">{origin}/?portal=admin</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => copyPortalLink('admin')}
+                    className="px-2.5 py-1 bg-amber-600/20 hover:bg-amber-600/30 text-amber-300 border border-amber-500/30 rounded-lg text-[10px] font-bold shrink-0"
+                  >
+                    {copiedLink === 'admin' ? '✓ Copied' : 'Copy Link'}
+                  </button>
+                </div>
+
                 <div>
-                  <label className="block text-[11px] font-semibold text-slate-300 mb-1">Administrative Email</label>
+                  <label className="block text-[11px] font-semibold text-slate-300 mb-1">Administrator ID</label>
                   <div className="relative">
-                    <Mail className="w-4 h-4 absolute left-3 top-2.5 text-slate-500" />
+                    <KeyRound className="w-4 h-4 absolute left-3 top-2.5 text-slate-500" />
                     <input
-                      type="email"
-                      value={adminEmail}
-                      onChange={e => setAdminEmail(e.target.value)}
+                      type="text"
+                      value={adminId}
+                      onChange={e => setAdminId(e.target.value)}
+                      placeholder="e.g. ADM-SUPER-2026"
                       className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2 pl-9 pr-3 text-xs text-white font-mono focus:outline-none focus:border-amber-500"
                       required
                     />

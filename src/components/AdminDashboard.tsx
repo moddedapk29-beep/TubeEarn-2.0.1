@@ -1,6 +1,10 @@
 import React, { useState } from 'react';
 import { useApp } from '../store/AppContext';
 import { AdminCommissionWithdrawModal } from './AdminCommissionWithdrawModal';
+import { AdminWithdrawalQueue } from './AdminWithdrawalQueue';
+import { AntiFraudAnalyticsChart } from './AntiFraudAnalyticsChart';
+import { AdminActionHistory } from './AdminActionHistory';
+import { AdminPendingVerifications } from './AdminPendingVerifications';
 import { 
   Layers, 
   ShieldAlert, 
@@ -12,7 +16,7 @@ import {
   AlertTriangle, 
   BrainCircuit, 
   Sparkles, 
-  Lock,
+  Lock, 
   UserX,
   UserCheck,
   Search,
@@ -21,7 +25,10 @@ import {
   LogOut,
   Coins,
   Smartphone,
-  QrCode
+  QrCode,
+  TrendingUp,
+  BarChart3,
+  History
 } from 'lucide-react';
 import { auditFraudDeepThinking } from '../gemini';
 import confetti from 'canvas-confetti';
@@ -36,10 +43,12 @@ export const AdminDashboard: React.FC = () => {
     escrowSummary,
     processWithdrawalAdmin,
     addFraudSignalLog,
+    adminActionLogs,
+    registeredAccounts,
     signOutRole
   } = useApp();
 
-  const [activeAdminTab, setActiveAdminTab] = useState<'withdrawals' | 'fraud' | 'escrow' | 'ledger'>('withdrawals');
+  const [activeAdminTab, setActiveAdminTab] = useState<'withdrawals' | 'verifications' | 'history' | 'analytics' | 'fraud' | 'escrow' | 'ledger'>('withdrawals');
   const [selectedAuditUser, setSelectedAuditUser] = useState<string>('user_demo_1');
   const [isAuditing, setIsAuditing] = useState(false);
   const [isCommissionWithdrawModalOpen, setIsCommissionWithdrawModalOpen] = useState(false);
@@ -126,11 +135,19 @@ export const AdminDashboard: React.FC = () => {
 
           <div className="flex items-center gap-2">
             <button
-              onClick={() => setActiveAdminTab('fraud')}
+              onClick={() => setActiveAdminTab('analytics')}
               className="px-3 py-2 bg-purple-600/20 border border-purple-500/30 text-purple-300 hover:bg-purple-600/30 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all"
             >
+              <TrendingUp className="w-4 h-4 text-purple-400" />
+              <span>Anti-Fraud Charts</span>
+            </button>
+
+            <button
+              onClick={() => setActiveAdminTab('fraud')}
+              className="px-3 py-2 bg-slate-900 border border-slate-700/80 text-slate-300 hover:text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all"
+            >
               <BrainCircuit className="w-4 h-4 text-purple-400" />
-              Gemini High Thinking Audit
+              <span>Deep Thinking Audit</span>
             </button>
 
             <button
@@ -211,135 +228,127 @@ export const AdminDashboard: React.FC = () => {
           <span className="text-[10px] text-slate-500">Both Earner &amp; Creator (&ge; ₹299)</span>
         </div>
 
+        <div 
+          onClick={() => setActiveAdminTab('verifications')}
+          className="p-4 rounded-xl bg-slate-900 border border-slate-800 hover:border-indigo-500/50 cursor-pointer transition-all group"
+        >
+          <span className="text-xs text-indigo-400 group-hover:text-indigo-300 block mb-1 flex items-center gap-1">
+            <UserCheck className="w-3 h-3 text-indigo-400" />
+            Pending Verifications
+          </span>
+          <div className="text-xl font-black text-indigo-400 font-mono">
+            {registeredAccounts.filter(a => a.kycStatus === 'pending').length} Profiles
+          </div>
+          <span className="text-[10px] text-slate-500">Document Review Queue</span>
+        </div>
+
       </div>
 
       {/* Navigation Tabs */}
-      <div className="flex border-b border-slate-800 gap-2">
+      <div className="flex border-b border-slate-800 gap-2 overflow-x-auto">
         <button
           onClick={() => setActiveAdminTab('withdrawals')}
-          className={`py-2 px-4 text-xs font-bold border-b-2 transition-all flex items-center gap-1.5 ${
+          className={`py-2 px-4 text-xs font-bold border-b-2 transition-all flex items-center gap-1.5 shrink-0 ${
             activeAdminTab === 'withdrawals'
               ? 'border-amber-500 text-amber-400'
               : 'border-transparent text-slate-400 hover:text-slate-200'
           }`}
         >
           <ArrowUpRight className="w-3.5 h-3.5" />
-          Withdrawal Requests ({pendingWithdrawals.length})
+          <span>Approval &amp; Rejection Queue ({pendingWithdrawals.length})</span>
+        </button>
+
+        <button
+          onClick={() => setActiveAdminTab('verifications')}
+          className={`py-2 px-4 text-xs font-bold border-b-2 transition-all flex items-center gap-1.5 shrink-0 ${
+            activeAdminTab === 'verifications'
+              ? 'border-indigo-500 text-indigo-400'
+              : 'border-transparent text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          <UserCheck className="w-3.5 h-3.5" />
+          <span>Pending Verifications ({registeredAccounts.filter(a => a.kycStatus === 'pending').length})</span>
+        </button>
+
+        <button
+          onClick={() => setActiveAdminTab('history')}
+          className={`py-2 px-4 text-xs font-bold border-b-2 transition-all flex items-center gap-1.5 shrink-0 ${
+            activeAdminTab === 'history'
+              ? 'border-amber-500 text-amber-400'
+              : 'border-transparent text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          <History className="w-3.5 h-3.5" />
+          <span>Action History ({adminActionLogs.length})</span>
+        </button>
+
+        <button
+          onClick={() => setActiveAdminTab('analytics')}
+          className={`py-2 px-4 text-xs font-bold border-b-2 transition-all flex items-center gap-1.5 shrink-0 ${
+            activeAdminTab === 'analytics'
+              ? 'border-purple-500 text-purple-400'
+              : 'border-transparent text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          <BarChart3 className="w-3.5 h-3.5" />
+          <span>Anti-Fraud Charts &amp; Effectiveness</span>
         </button>
 
         <button
           onClick={() => setActiveAdminTab('escrow')}
-          className={`py-2 px-4 text-xs font-bold border-b-2 transition-all flex items-center gap-1.5 ${
+          className={`py-2 px-4 text-xs font-bold border-b-2 transition-all flex items-center gap-1.5 shrink-0 ${
             activeAdminTab === 'escrow'
               ? 'border-indigo-500 text-indigo-400'
               : 'border-transparent text-slate-400 hover:text-slate-200'
           }`}
         >
           <Lock className="w-3.5 h-3.5" />
-          Escrow Vault &amp; Commission Ledger
+          <span>Escrow Vault &amp; Commission Ledger</span>
         </button>
 
         <button
           onClick={() => setActiveAdminTab('fraud')}
-          className={`py-2 px-4 text-xs font-bold border-b-2 transition-all flex items-center gap-1.5 ${
+          className={`py-2 px-4 text-xs font-bold border-b-2 transition-all flex items-center gap-1.5 shrink-0 ${
             activeAdminTab === 'fraud'
               ? 'border-purple-500 text-purple-400'
               : 'border-transparent text-slate-400 hover:text-slate-200'
           }`}
         >
           <BrainCircuit className="w-3.5 h-3.5" />
-          Gemini High Thinking Anti-Fraud
+          <span>Gemini High Thinking Anti-Fraud</span>
         </button>
 
         <button
           onClick={() => setActiveAdminTab('ledger')}
-          className={`py-2 px-4 text-xs font-bold border-b-2 transition-all flex items-center gap-1.5 ${
+          className={`py-2 px-4 text-xs font-bold border-b-2 transition-all flex items-center gap-1.5 shrink-0 ${
             activeAdminTab === 'ledger'
               ? 'border-emerald-500 text-emerald-400'
               : 'border-transparent text-slate-400 hover:text-slate-200'
           }`}
         >
           <FileText className="w-3.5 h-3.5" />
-          Master Ledger ({transactions.length})
+          <span>Master Ledger ({transactions.length})</span>
         </button>
       </div>
 
-      {/* TAB 1: WITHDRAWALS QUEUE */}
+      {/* TAB 1: WITHDRAWALS APPROVAL & REJECTION QUEUE */}
       {activeAdminTab === 'withdrawals' && (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between text-xs text-slate-400">
-            <span>Enforcing Mandatory ₹299 Minimum Threshold &bull; Real UPI Payout Gateway</span>
-            <span>Batch &amp; Instant NPCI IMPS Payouts</span>
-          </div>
+        <AdminWithdrawalQueue />
+      )}
 
-          {pendingWithdrawals.length === 0 ? (
-            <div className="p-10 text-center bg-slate-900/40 rounded-2xl border border-slate-800 text-xs text-slate-500">
-              No pending withdrawal requests in the queue.
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {pendingWithdrawals.map(w => (
-                <div
-                  key={w.id}
-                  className="p-4 rounded-xl bg-slate-900 border border-slate-800 hover:border-slate-700 transition-all flex flex-col md:flex-row md:items-center justify-between gap-4"
-                >
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-white text-sm">{w.userName}</span>
-                      <span className="text-[11px] text-slate-400">({w.userEmail})</span>
-                      <span className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase border ${
-                        w.userRole === 'creator' 
-                          ? 'bg-rose-500/10 text-rose-400 border-rose-500/30' 
-                          : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
-                      }`}>
-                        {w.userRole === 'creator' ? 'CREATOR ESCROW' : 'EARNER REWARDS'}
-                      </span>
-                      <span className="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-300 font-mono uppercase">
-                        {w.method}
-                      </span>
-                    </div>
+      {/* TAB: PENDING VERIFICATIONS & DOCUMENT REVIEW */}
+      {activeAdminTab === 'verifications' && (
+        <AdminPendingVerifications />
+      )}
 
-                    <div className="text-xs text-slate-300 font-mono">
-                      {w.method === 'upi' ? `VPA / UPI: ${w.upiId}` : `A/C: ${w.bankAccountNumber} (IFSC: ${w.ifsc})`}
-                    </div>
+      {/* TAB 2: ACTION HISTORY AUDIT LOG */}
+      {activeAdminTab === 'history' && (
+        <AdminActionHistory />
+      )}
 
-                    <div className="text-[10px] text-slate-500">
-                      Requested: {new Date(w.createdAt).toLocaleString()} &bull; ID: {w.id}
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-4">
-                    <div className="text-right">
-                      <span className="text-[10px] text-slate-400 block">Amount</span>
-                      <span className="text-base font-black text-emerald-400 font-mono">
-                        ₹{w.amount.toFixed(2)}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => processWithdrawalAdmin(w.id, 'approve')}
-                        className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold transition-all shadow-md shadow-emerald-600/20 flex items-center gap-1.5"
-                        title="Disburse instantly via Real UPI Payout Gateway with 12-digit UTR"
-                      >
-                        <Smartphone className="w-3.5 h-3.5" />
-                        Disburse via UPI Gateway
-                      </button>
-
-                      <button
-                        onClick={() => processWithdrawalAdmin(w.id, 'reject', 'Compliance rejection')}
-                        className="px-3 py-1.5 bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/30 rounded-lg text-xs font-bold transition-all flex items-center gap-1"
-                      >
-                        <XCircle className="w-3.5 h-3.5" />
-                        Reject &amp; Refund
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+      {/* TAB 2: ANTI-FRAUD DATA VISUALIZATIONS & CHARTS (RECHARTS) */}
+      {activeAdminTab === 'analytics' && (
+        <AntiFraudAnalyticsChart />
       )}
 
       {/* TAB: ESCROW VAULT & COMMISSION LEDGER */}
@@ -391,9 +400,12 @@ export const AdminDashboard: React.FC = () => {
         </div>
       )}
 
-      {/* TAB 2: GEMINI HIGH THINKING ANTI-FRAUD */}
+      {/* TAB: GEMINI HIGH THINKING ANTI-FRAUD */}
       {activeAdminTab === 'fraud' && (
         <div className="space-y-6">
+          
+          {/* Real-time Anti-Fraud Data Visualizations */}
+          <AntiFraudAnalyticsChart />
           
           {/* Deep Thinking Engine Panel */}
           <div className="p-6 rounded-2xl bg-gradient-to-br from-purple-950/40 via-slate-900 to-slate-900 border border-purple-500/30 space-y-4 shadow-xl">

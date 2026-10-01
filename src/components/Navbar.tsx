@@ -28,6 +28,7 @@ interface NavbarProps {
   onOpenTests: () => void;
   onOpenAuth: (role?: 'user' | 'creator' | 'admin') => void;
   onOpenReferral?: () => void;
+  onOpenRegister?: (role?: 'user' | 'creator') => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -36,7 +37,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenSocials,
   onOpenTests,
   onOpenAuth,
-  onOpenReferral
+  onOpenReferral,
+  onOpenRegister
 }) => {
   const { 
     currentUser, 
@@ -169,6 +171,19 @@ export const Navbar: React.FC<NavbarProps> = ({
               </button>
             )}
 
+            {/* Create New ID Button */}
+            {onOpenRegister && (
+              <button
+                onClick={() => onOpenRegister('user')}
+                className="px-2.5 py-1.5 bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all shadow-md shadow-red-600/20"
+                title="Create a new permanent User ID or Creator ID"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-yellow-300" />
+                <span className="hidden sm:inline">Create New ID</span>
+                <span className="sm:hidden">New ID</span>
+              </button>
+            )}
+
             {/* Separate Logins Portal Button */}
             <div className="relative">
               <button
@@ -192,6 +207,25 @@ export const Navbar: React.FC<NavbarProps> = ({
                       )}
                     </div>
                   </div>
+
+                  {/* Create New ID Action in Menu */}
+                  {onOpenRegister && (
+                    <div className="p-1 mb-1 border-b border-slate-800">
+                      <button
+                        onClick={() => {
+                          setIsAccountMenuOpen(false);
+                          onOpenRegister('user');
+                        }}
+                        className="w-full p-2 rounded-xl text-left text-xs font-bold bg-gradient-to-r from-red-600/20 to-rose-600/20 hover:from-red-600/30 hover:to-rose-600/30 text-white border border-red-500/30 flex items-center gap-2 transition-all"
+                      >
+                        <Sparkles className="w-3.5 h-3.5 text-yellow-400" />
+                        <div>
+                          <span className="block font-black">✨ Create New ID Page</span>
+                          <span className="text-[10px] text-slate-400 font-normal">Generate USR- / CRT- unique credentials</span>
+                        </div>
+                      </button>
+                    </div>
+                  )}
 
                   {/* Earner Portal Login & Direct Link */}
                   <div className="flex items-center gap-1">
@@ -241,33 +275,35 @@ export const Navbar: React.FC<NavbarProps> = ({
                     </button>
                   </div>
 
-                  {/* STRICT ACCESS CONTROL: Only show Admin Hub to Authenticated Admins! Users and creators NEVER see this */}
-                  {isRoleAuthenticated('admin') && (
-                    <div className="pt-1 border-t border-slate-800/80">
-                      <div className="flex items-center gap-1">
-                        <button
-                          onClick={() => {
-                            setIsAccountMenuOpen(false);
-                            setCurrentRole('admin');
-                          }}
-                          className="flex-1 p-2 rounded-xl text-left text-xs font-semibold hover:bg-amber-600/10 text-amber-300 flex items-center gap-2 transition-colors"
-                        >
-                          <Lock className="w-4 h-4 text-amber-500 shrink-0" />
-                          <div className="truncate">
-                            <span className="block font-bold">Admin Hub Console</span>
-                            <span className="text-[10px] text-amber-500/80 font-mono">Authorized Superuser</span>
-                          </div>
-                        </button>
-                        <button
-                          onClick={() => copyDirectLink('admin')}
-                          title="Copy Secret Admin Portal Link"
-                          className="p-2 rounded-xl text-amber-400 hover:text-amber-300 hover:bg-slate-800 transition-colors shrink-0"
-                        >
-                          {copiedLinkRole === 'admin' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                        </button>
-                      </div>
+                  {/* Master Admin Portal Access & Link */}
+                  <div className="pt-1 border-t border-slate-800/80">
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => {
+                          setIsAccountMenuOpen(false);
+                          setCurrentRole('admin');
+                        }}
+                        className="flex-1 p-2 rounded-xl text-left text-xs font-semibold hover:bg-amber-600/10 text-amber-300 flex items-center gap-2 transition-colors"
+                      >
+                        <Lock className="w-4 h-4 text-amber-500 shrink-0" />
+                        <div className="truncate">
+                          <span className="block font-bold">
+                            {isRoleAuthenticated('admin') ? 'Admin Hub Console' : 'Admin Access Portal'}
+                          </span>
+                          <span className="text-[10px] text-amber-500/80 font-mono">
+                            {isRoleAuthenticated('admin') ? 'Authorized Superuser' : 'Requires Admin ID & Password'}
+                          </span>
+                        </div>
+                      </button>
+                      <button
+                        onClick={() => copyDirectLink('admin')}
+                        title="Copy Dedicated Admin Portal Link"
+                        className="p-2 rounded-xl text-amber-400 hover:text-amber-300 hover:bg-slate-800 transition-colors shrink-0"
+                      >
+                        {copiedLinkRole === 'admin' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                      </button>
                     </div>
-                  )}
+                  </div>
 
                   <div className="pt-1 border-t border-slate-800 mt-1">
                     <button
