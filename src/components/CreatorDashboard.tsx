@@ -345,11 +345,12 @@ export const CreatorDashboard: React.FC<CreatorDashboardProps> = ({ onOpenWallet
             <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-xs">
               <span className="text-slate-400 text-[11px]">Creator Code:</span>
               <span className="font-mono font-bold text-amber-400 tracking-wider">
-                {currentUser.referralCode || 'STUDIO-PRIYA'}
+                {currentUser.referralCode || (currentUser.customUserId ? `STUDIO-${currentUser.customUserId.replace(/[^A-Za-z0-9]/g, '')}` : 'STUDIO-CREATOR')}
               </span>
               <button
                 onClick={() => {
-                  navigator.clipboard.writeText(currentUser.referralCode || 'STUDIO-PRIYA');
+                  const refCode = currentUser.referralCode || (currentUser.customUserId ? `STUDIO-${currentUser.customUserId.replace(/[^A-Za-z0-9]/g, '')}` : 'STUDIO-CREATOR');
+                  navigator.clipboard.writeText(refCode);
                   setCopiedCode(true);
                   setTimeout(() => setCopiedCode(false), 2000);
                 }}
@@ -363,7 +364,8 @@ export const CreatorDashboard: React.FC<CreatorDashboardProps> = ({ onOpenWallet
             <button
               onClick={() => {
                 const origin = typeof window !== 'undefined' ? window.location.origin : 'https://tubeearn.app';
-                const link = `${origin}/?portal=creator&ref=${currentUser.referralCode || 'STUDIO-PRIYA'}`;
+                const refCode = currentUser.referralCode || (currentUser.customUserId ? `STUDIO-${currentUser.customUserId.replace(/[^A-Za-z0-9]/g, '')}` : 'STUDIO-CREATOR');
+                const link = `${origin}/?portal=creator&ref=${refCode}`;
                 navigator.clipboard.writeText(link);
                 setCopiedLink(true);
                 setTimeout(() => setCopiedLink(false), 2000);

@@ -49,7 +49,7 @@ export const AdminDashboard: React.FC = () => {
   } = useApp();
 
   const [activeAdminTab, setActiveAdminTab] = useState<'withdrawals' | 'verifications' | 'history' | 'analytics' | 'fraud' | 'escrow' | 'ledger'>('withdrawals');
-  const [selectedAuditUser, setSelectedAuditUser] = useState<string>('user_demo_1');
+  const [selectedAuditUser, setSelectedAuditUser] = useState<string>(() => registeredAccounts[0]?.uid || '');
   const [isAuditing, setIsAuditing] = useState(false);
   const [isCommissionWithdrawModalOpen, setIsCommissionWithdrawModalOpen] = useState(false);
   const [deepThinkingResult, setDeepThinkingResult] = useState<{

@@ -248,11 +248,12 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({ onOpenWallet, onOp
             <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-xs">
               <span className="text-slate-400 text-[11px]">Your Code:</span>
               <span className="font-mono font-bold text-amber-400 tracking-wider">
-                {currentUser.referralCode || 'EARN-AARAV'}
+                {currentUser.referralCode || (currentUser.customUserId ? `EARN-${currentUser.customUserId.replace(/[^A-Za-z0-9]/g, '')}` : 'EARN-BONUS')}
               </span>
               <button
                 onClick={() => {
-                  navigator.clipboard.writeText(currentUser.referralCode || 'EARN-AARAV');
+                  const refCode = currentUser.referralCode || (currentUser.customUserId ? `EARN-${currentUser.customUserId.replace(/[^A-Za-z0-9]/g, '')}` : 'EARN-BONUS');
+                  navigator.clipboard.writeText(refCode);
                   setCopiedCode(true);
                   setTimeout(() => setCopiedCode(false), 2000);
                 }}
@@ -267,7 +268,7 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({ onOpenWallet, onOp
             <button
               onClick={() => {
                 const origin = typeof window !== 'undefined' ? window.location.origin : 'https://tubeearn.app';
-                const link = `${origin}/?portal=user&ref=${currentUser.referralCode || 'EARN-AARAV'}`;
+                const link = `${origin}/?portal=user&ref=${currentUser.referralCode || (currentUser.customUserId ? `EARN-${currentUser.customUserId.replace(/[^A-Za-z0-9]/g, '')}` : 'EARN-BONUS')}`;
                 navigator.clipboard.writeText(link);
                 setCopiedLink(true);
                 setTimeout(() => setCopiedLink(false), 2000);
